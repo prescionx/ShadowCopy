@@ -1781,6 +1781,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case IDB_SELECT_FOLDER:
             if (SelectTargetFolder()) {
                 SetWindowTextW(g_hPathDisplay, g_targetPath.c_str());
+                SetWindowTextW(g_hEditDefaultPath, g_targetPath.c_str());
                 LogMessage(L"📁 Hedef klasör değiştirildi.");
             }
             break;
@@ -2023,6 +2024,7 @@ void SaveSettings() {
         RegCloseKey(hKey);
     }
     SetWindowTextW(g_hPathDisplay, g_targetPath.c_str());
+    SetWindowTextW(g_hEditDefaultPath, g_targetPath.c_str());
 }
 
 void LoadSettings() {
@@ -2057,10 +2059,11 @@ void LoadSettings() {
 void PaintNavButton(LPDRAWITEMSTRUCT pDIS)
 {
     HDC hdc = pDIS->hDC; RECT rc = pDIS->rcItem; bool isPressed = (pDIS->itemState & ODS_SELECTED);
+    // Updated tab order: Home=0, Lonelith=1, Settings=2, SysInfo=3
     bool isActive = (pDIS->CtlID == IDB_NAV_HOME && g_currentTab == 0) || 
-                    (pDIS->CtlID == IDB_NAV_SETTINGS && g_currentTab == 1) || 
-                    (pDIS->CtlID == IDB_NAV_INFO && g_currentTab == 2) ||
-                    (pDIS->CtlID == IDB_NAV_LONELITH && g_currentTab == 3);
+                    (pDIS->CtlID == IDB_NAV_LONELITH && g_currentTab == 1) || 
+                    (pDIS->CtlID == IDB_NAV_SETTINGS && g_currentTab == 2) ||
+                    (pDIS->CtlID == IDB_NAV_INFO && g_currentTab == 3);
     COLORREF bgCol = CLR_BG_SIDEBAR; COLORREF txtCol = RGB(80, 80, 80);
     
     if (pDIS->CtlID == IDB_UNINSTALL_APP) { 
