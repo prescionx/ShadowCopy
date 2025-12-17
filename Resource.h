@@ -1,21 +1,26 @@
 //{{NO_DEPENDENCIES}}
 // Microsoft Visual C++ generated include file.
-// Used by Tirnakci.rc
+// Used by ShadowCopy.rc
 
 #define IDS_APP_TITLE			103
 
 #define IDR_MAINFRAME			128
-#define IDD_TIRNAKCI_DIALOG	102
+#define IDD_SHADOWCOPY_DIALOG	102
 #define IDD_ABOUTBOX			103
 #define IDM_ABOUT				104
 #define IDM_EXIT				105
-#define IDI_TIRNAKCI			107
+#define IDI_SHADOWCOPY			107
 #define IDI_SMALL				108
-#define IDC_TIRNAKCI			109
+#define IDC_SHADOWCOPY			109
 #define IDC_MYICON				2
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
 #endif
+
+// New icon resources for status indicators
+#define IDI_TRAY_NO_WINRAR		110
+#define IDI_TRAY_NO_INTERNET	111
+#define IDI_TRAY_CONNECTED		112
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED
