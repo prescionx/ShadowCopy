@@ -554,18 +554,31 @@ bool CheckWinRARInstalled() {
     wchar_t pathBuf[MAX_PATH] = {0};
     DWORD bufSize = sizeof(pathBuf);
     
+    // Try 64-bit registry location first
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\WinRAR", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        if (RegQueryValueExW(hKey, L"exe64", NULL, NULL, (BYTE*)pathBuf, &bufSize) == ERROR_SUCCESS) {
-            g_winrarPath = std::wstring(pathBuf);
-            found = true;
+        // Try common registry value names
+        const wchar_t* valueNames[] = {L"exe64", L"exe", L"ExePath"};
+        for (const auto& valueName : valueNames) {
+            bufSize = sizeof(pathBuf);
+            if (RegQueryValueExW(hKey, valueName, NULL, NULL, (BYTE*)pathBuf, &bufSize) == ERROR_SUCCESS) {
+                g_winrarPath = std::wstring(pathBuf);
+                found = true;
+                break;
+            }
         }
         RegCloseKey(hKey);
     }
+    
+    // Try 32-bit registry location (WOW6432Node on 64-bit Windows)
     if (!found && RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\WOW6432Node\\WinRAR", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        bufSize = sizeof(pathBuf);
-        if (RegQueryValueExW(hKey, L"exe32", NULL, NULL, (BYTE*)pathBuf, &bufSize) == ERROR_SUCCESS) {
-            g_winrarPath = std::wstring(pathBuf);
-            found = true;
+        const wchar_t* valueNames[] = {L"exe32", L"exe", L"ExePath"};
+        for (const auto& valueName : valueNames) {
+            bufSize = sizeof(pathBuf);
+            if (RegQueryValueExW(hKey, valueName, NULL, NULL, (BYTE*)pathBuf, &bufSize) == ERROR_SUCCESS) {
+                g_winrarPath = std::wstring(pathBuf);
+                found = true;
+                break;
+            }
         }
         RegCloseKey(hKey);
     }
