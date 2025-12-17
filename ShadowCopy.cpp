@@ -21,7 +21,7 @@
 #include <wincrypt.h>
 #include <dpapi.h>
 
-// Gerekli kütüphanelerin otomatik linklenmesi (MSVC için)
+// Automatic linking of required libraries (for MSVC)
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "uxtheme.lib")
@@ -503,10 +503,10 @@ bool CheckInternetConnection() {
     BOOL result = InternetGetConnectedState(&flags, 0);
     
     if (result) {
-        // Double-check with actual connection attempt
+        // Double-check with actual connection attempt using HTTPS for security
         HINTERNET hInternet = InternetOpenW(L"ShadowCopy", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
         if (hInternet) {
-            HINTERNET hUrl = InternetOpenUrlW(hInternet, L"http://www.msftconnecttest.com/connecttest.txt", NULL, 0, INTERNET_FLAG_NO_CACHE_WRITE, 0);
+            HINTERNET hUrl = InternetOpenUrlW(hInternet, L"https://www.msftconnecttest.com/connecttest.txt", NULL, 0, INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_SECURE, 0);
             if (hUrl) {
                 InternetCloseHandle(hUrl);
                 InternetCloseHandle(hInternet);
