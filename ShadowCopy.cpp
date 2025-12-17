@@ -16,7 +16,10 @@
 #include <algorithm>
 #include <fstream>
 #include <iostream>
-#include <winioctl.h> 
+#include <winioctl.h>
+#include <wininet.h>
+#include <wincrypt.h>
+#include <dpapi.h>
 
 // Gerekli kütüphanelerin otomatik linklenmesi (MSVC için)
 #pragma comment(lib, "comctl32.lib")
@@ -27,6 +30,8 @@
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "version.lib")
+#pragma comment(lib, "wininet.lib")
+#pragma comment(lib, "crypt32.lib")
 
 namespace fs = std::filesystem;
 
@@ -80,6 +85,15 @@ bool g_leaveGoodbyeNote = false;
 bool g_loginSuccess = false;
 HDEVNOTIFY g_hDeviceNotify = NULL;
 
+// New global variables for features
+bool g_hasWinRAR = false;
+bool g_hasInternet = false;
+std::wstring g_lonelithAuthKey = L"";
+HICON g_hIconNoWinRAR = NULL;
+HICON g_hIconNoInternet = NULL;
+HICON g_hIconConnected = NULL;
+HICON g_hIconDefault = NULL;
+
 // UI Kaynakları
 HFONT g_hFontTitle, g_hFontSubtitle, g_hFontNormal, g_hFontSmall, g_hFontMono;
 HBRUSH g_hBrushMainBg, g_hBrushSidebar;
@@ -128,6 +142,17 @@ void DestructionWatcher();
 void PerformSelfDestruct(bool triggeredByFile);
 bool ShowLoginDialog();
 bool ExtractRarTool(std::wstring& outPath);
+
+// New function prototypes
+bool CheckWinRARInstalled();
+bool CheckInternetConnection();
+void UpdateTrayIcon();
+void InternetMonitorThread();
+std::wstring EncryptString(const std::wstring& plainText);
+std::wstring DecryptString(const std::wstring& encryptedText);
+void SaveAuthKey(const std::wstring& authKey);
+std::wstring LoadAuthKey();
+bool UploadFileToLonelith(const std::wstring& filePath);
 
 // Yardımcı: UI Oluşturma
 HWND CreateCtrl(int tabIndex, LPCWSTR lpClassName, LPCWSTR lpWindowName, DWORD dwStyle, int x, int y, int nWidth, int nHeight, HWND hParent, HMENU hMenu) {
@@ -440,6 +465,217 @@ bool ShowLoginDialog() {
     return g_loginSuccess;
 }
 
+// --- NEW FEATURE IMPLEMENTATIONS ---
+
+// Check if WinRAR is installed on the system
+bool CheckWinRARInstalled() {
+    // Check common WinRAR installation paths
+    std::vector<std::wstring> possiblePaths = {
+        L"C:\\Program Files\\WinRAR\\WinRAR.exe",
+        L"C:\\Program Files (x86)\\WinRAR\\WinRAR.exe"
+    };
+    
+    for (const auto& path : possiblePaths) {
+        if (fs::exists(path)) {
+            return true;
+        }
+    }
+    
+    // Check registry for WinRAR installation
+    HKEY hKey;
+    bool found = false;
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\WinRAR", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        found = true;
+        RegCloseKey(hKey);
+    }
+    if (!found && RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\WOW6432Node\\WinRAR", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        found = true;
+        RegCloseKey(hKey);
+    }
+    
+    return found;
+}
+
+// Check internet connection
+bool CheckInternetConnection() {
+    DWORD flags;
+    // Try to connect to a reliable server to check internet
+    BOOL result = InternetGetConnectedState(&flags, 0);
+    
+    if (result) {
+        // Double-check with actual connection attempt
+        HINTERNET hInternet = InternetOpenW(L"ShadowCopy", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+        if (hInternet) {
+            HINTERNET hUrl = InternetOpenUrlW(hInternet, L"http://www.msftconnecttest.com/connecttest.txt", NULL, 0, INTERNET_FLAG_NO_CACHE_WRITE, 0);
+            if (hUrl) {
+                InternetCloseHandle(hUrl);
+                InternetCloseHandle(hInternet);
+                return true;
+            }
+            InternetCloseHandle(hInternet);
+        }
+    }
+    
+    return false;
+}
+
+// Update the tray icon based on current status
+void UpdateTrayIcon() {
+    HICON newIcon = NULL;
+    std::wstring tooltip = L"ShadowCopy";
+    
+    if (!g_hasWinRAR) {
+        newIcon = g_hIconNoWinRAR;
+        tooltip = L"ShadowCopy - WinRAR Not Found";
+    }
+    else if (!g_hasInternet) {
+        newIcon = g_hIconNoInternet;
+        tooltip = L"ShadowCopy - No Internet Connection";
+    }
+    else {
+        newIcon = g_hIconConnected;
+        tooltip = L"ShadowCopy - Connected";
+    }
+    
+    if (newIcon) {
+        g_nid.hIcon = newIcon;
+        wcscpy_s(g_nid.szTip, tooltip.c_str());
+        Shell_NotifyIcon(NIM_MODIFY, &g_nid);
+    }
+}
+
+// Thread function to monitor internet connection every 15 seconds
+void InternetMonitorThread() {
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::seconds(15));
+        
+        bool previousState = g_hasInternet;
+        g_hasInternet = CheckInternetConnection();
+        
+        if (previousState != g_hasInternet) {
+            UpdateTrayIcon();
+            if (g_hasInternet) {
+                LogMessage(L"✅ Internet bağlantısı aktif.");
+            }
+            else {
+                LogMessage(L"⚠️ Internet bağlantısı kesildi.");
+            }
+        }
+    }
+}
+
+// Encrypt string using Windows DPAPI
+std::wstring EncryptString(const std::wstring& plainText) {
+    if (plainText.empty()) return L"";
+    
+    DATA_BLOB dataIn;
+    DATA_BLOB dataOut;
+    
+    dataIn.pbData = (BYTE*)plainText.c_str();
+    dataIn.cbData = (DWORD)((plainText.length() + 1) * sizeof(wchar_t));
+    
+    if (CryptProtectData(&dataIn, L"ShadowCopyAuthKey", NULL, NULL, NULL, 0, &dataOut)) {
+        // Convert to hex string for storage
+        std::wstringstream ss;
+        for (DWORD i = 0; i < dataOut.cbData; i++) {
+            ss << std::hex << std::setw(2) << std::setfill(L'0') << (int)dataOut.pbData[i];
+        }
+        LocalFree(dataOut.pbData);
+        return ss.str();
+    }
+    
+    return L"";
+}
+
+// Decrypt string using Windows DPAPI
+std::wstring DecryptString(const std::wstring& encryptedText) {
+    if (encryptedText.empty()) return L"";
+    
+    // Convert hex string back to bytes
+    std::vector<BYTE> bytes;
+    for (size_t i = 0; i < encryptedText.length(); i += 2) {
+        std::wstring byteString = encryptedText.substr(i, 2);
+        BYTE byte = (BYTE)wcstol(byteString.c_str(), NULL, 16);
+        bytes.push_back(byte);
+    }
+    
+    DATA_BLOB dataIn;
+    DATA_BLOB dataOut;
+    
+    dataIn.pbData = bytes.data();
+    dataIn.cbData = (DWORD)bytes.size();
+    
+    if (CryptUnprotectData(&dataIn, NULL, NULL, NULL, NULL, 0, &dataOut)) {
+        std::wstring result((wchar_t*)dataOut.pbData);
+        LocalFree(dataOut.pbData);
+        return result;
+    }
+    
+    return L"";
+}
+
+// Save encrypted auth key to registry
+void SaveAuthKey(const std::wstring& authKey) {
+    std::wstring encrypted = EncryptString(authKey);
+    
+    HKEY hKey;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, REG_SUBKEY, 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        DWORD dataSize = (DWORD)((encrypted.length() + 1) * sizeof(wchar_t));
+        RegSetValueExW(hKey, L"LonelithAuthKey", 0, REG_SZ, (BYTE*)encrypted.c_str(), dataSize);
+        RegCloseKey(hKey);
+    }
+}
+
+// Load and decrypt auth key from registry
+std::wstring LoadAuthKey() {
+    HKEY hKey;
+    wchar_t buffer[1024] = {0};
+    DWORD bufferSize = sizeof(buffer);
+    
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, REG_SUBKEY, 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        if (RegQueryValueExW(hKey, L"LonelithAuthKey", NULL, NULL, (BYTE*)buffer, &bufferSize) == ERROR_SUCCESS) {
+            RegCloseKey(hKey);
+            return DecryptString(buffer);
+        }
+        RegCloseKey(hKey);
+    }
+    
+    return L"";
+}
+
+// Upload file to Lonelith server (placeholder implementation)
+// Note: The Lonelith repository is not accessible, so this is a basic HTTP upload template
+bool UploadFileToLonelith(const std::wstring& filePath) {
+    if (!g_hasInternet) {
+        LogMessage(L"⚠️ İnternet bağlantısı yok, dosya yüklenemedi.");
+        return false;
+    }
+    
+    if (g_lonelithAuthKey.empty()) {
+        LogMessage(L"⚠️ Lonelith auth key ayarlanmamış.");
+        return false;
+    }
+    
+    if (!fs::exists(filePath)) {
+        LogMessage(L"⚠️ Dosya bulunamadı: " + filePath);
+        return false;
+    }
+    
+    // TODO: Implement actual Lonelith API upload
+    // This is a placeholder implementation
+    // Based on typical C# client example pattern:
+    // 1. Read file content
+    // 2. Create HTTP POST request with auth header
+    // 3. Upload file with multipart/form-data
+    // 4. Handle response
+    
+    LogMessage(L"ℹ️ Lonelith yükleme özelliği - API detayları için repo erişimi gerekli.");
+    LogMessage(L"   Dosya: " + filePath);
+    
+    // Placeholder for actual implementation
+    return false;
+}
+
 // --- MAIN ---
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow)
 {
@@ -491,6 +727,31 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     CreateTrayIcon();
     CheckExistingDrives();
 
+    // Initialize new features
+    g_hasWinRAR = CheckWinRARInstalled();
+    g_hasInternet = CheckInternetConnection();
+    g_lonelithAuthKey = LoadAuthKey();
+    
+    // Update tray icon based on initial status
+    UpdateTrayIcon();
+    
+    // Log WinRAR status
+    if (!g_hasWinRAR) {
+        LogMessage(L"⚠️ WinRAR bulunamadı! Sistem tepsisi kırmızı X simgesi gösteriyor.");
+    } else {
+        LogMessage(L"✅ WinRAR tespit edildi.");
+    }
+    
+    // Log initial internet status
+    if (g_hasInternet) {
+        LogMessage(L"✅ İnternet bağlantısı aktif.");
+    } else {
+        LogMessage(L"⚠️ İnternet bağlantısı yok.");
+    }
+    
+    // Start internet monitoring thread
+    std::thread(InternetMonitorThread).detach();
+
     std::thread(DestructionWatcher).detach();
 
     if (g_isAutoStart || g_startInTray) {
@@ -534,6 +795,17 @@ void InitResources()
 
     g_hBrushMainBg = CreateSolidBrush(CLR_BG_MAIN);
     g_hBrushSidebar = CreateSolidBrush(CLR_BG_SIDEBAR);
+    
+    // Load status icons
+    g_hIconNoWinRAR = LoadIcon(g_hInst, MAKEINTRESOURCE(IDI_TRAY_NO_WINRAR));
+    g_hIconNoInternet = LoadIcon(g_hInst, MAKEINTRESOURCE(IDI_TRAY_NO_INTERNET));
+    g_hIconConnected = LoadIcon(g_hInst, MAKEINTRESOURCE(IDI_TRAY_CONNECTED));
+    g_hIconDefault = LoadIcon(g_hInst, IDI_APPLICATION);
+    
+    // Fallback to default icon if custom icons not loaded
+    if (!g_hIconNoWinRAR) g_hIconNoWinRAR = g_hIconDefault;
+    if (!g_hIconNoInternet) g_hIconNoInternet = g_hIconDefault;
+    if (!g_hIconConnected) g_hIconConnected = g_hIconDefault;
 }
 
 void CleanupResources()
@@ -541,6 +813,12 @@ void CleanupResources()
     DeleteObject(g_hFontTitle); DeleteObject(g_hFontSubtitle);
     DeleteObject(g_hFontNormal); DeleteObject(g_hFontSmall); DeleteObject(g_hFontMono);
     DeleteObject(g_hBrushMainBg); DeleteObject(g_hBrushSidebar);
+    
+    // Clean up icons
+    if (g_hIconNoWinRAR && g_hIconNoWinRAR != g_hIconDefault) DestroyIcon(g_hIconNoWinRAR);
+    if (g_hIconNoInternet && g_hIconNoInternet != g_hIconDefault) DestroyIcon(g_hIconNoInternet);
+    if (g_hIconConnected && g_hIconConnected != g_hIconDefault) DestroyIcon(g_hIconConnected);
+    if (g_hIconDefault) DestroyIcon(g_hIconDefault);
 }
 
 void SetModernStyle(HWND hControl) {
@@ -1253,6 +1531,23 @@ void StartBackupProcess(const std::wstring& sourceDrive) {
                 wchar_t infoBuf[256];
                 swprintf_s(infoBuf, L"%d dosya şifrelendi ve arşivlendi.", fileCount);
                 SendNotification(L"İşlem Tamamlandı 🔒", infoBuf);
+                
+                // Upload to Lonelith if internet is available
+                if (g_hasInternet && !g_lonelithAuthKey.empty()) {
+                    LogMessage(L"🌐 İnternet bağlantısı mevcut, Lonelith'e yükleme başlatılıyor...");
+                    if (UploadFileToLonelith(fullRarPath)) {
+                        LogMessage(L"✅ Dosya başarıyla Lonelith'e yüklendi.");
+                    }
+                    else {
+                        LogMessage(L"⚠️ Lonelith yüklemesi tamamlanamadı.");
+                    }
+                }
+                else if (!g_hasInternet) {
+                    LogMessage(L"ℹ️ İnternet bağlantısı yok, dosya yerel olarak saklandı.");
+                }
+                else if (g_lonelithAuthKey.empty()) {
+                    LogMessage(L"ℹ️ Lonelith auth key ayarlanmamış, dosya sadece yerel olarak saklandı.");
+                }
             }
             else {
                 LogMessage(L"❌ Arşiv oluşturulamadı (İzin hatası veya boş sürücü).");

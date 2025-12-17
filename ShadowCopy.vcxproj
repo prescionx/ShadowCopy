@@ -189,17 +189,20 @@
     <ClInclude Include="framework.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="targetver.h" />
-    <ClInclude Include="Tirnakci.h" />
+    <ClInclude Include="ShadowCopy.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Tirnakci.cpp" />
+    <ClCompile Include="ShadowCopy.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="Tirnakci.rc" />
+    <ResourceCompile Include="ShadowCopy.rc" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="small.ico" />
-    <Image Include="Tirnakci.ico" />
+    <Image Include="ShadowCopy.ico" />
+    <Image Include="tray_no_winrar.ico" />
+    <Image Include="tray_no_internet.ico" />
+    <Image Include="tray_connected.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
