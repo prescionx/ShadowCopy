@@ -30,7 +30,7 @@
     <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{0948d753-fad1-49f9-8651-78191fd86fee}</ProjectGuid>
-    <RootNamespace>Tirnakci</RootNamespace>
+    <RootNamespace>ShadowCopy</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <ProjectName>ShadowCopy</ProjectName>
   </PropertyGroup>
@@ -200,9 +200,9 @@
   <ItemGroup>
     <Image Include="small.ico" />
     <Image Include="ShadowCopy.ico" />
-    <Image Include="tray_no_winrar.ico" />
-    <Image Include="tray_no_internet.ico" />
     <Image Include="tray_connected.ico" />
+    <Image Include="tray_no_internet.ico" />
+    <Image Include="tray_no_winrar.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

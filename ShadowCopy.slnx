@@ -6,5 +6,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="Tirnakci.vcxproj" Id="0948d753-fad1-49f9-8651-78191fd86fee" />
+  <Project Path="ShadowCopy.vcxproj" Id="0948d753-fad1-49f9-8651-78191fd86fee" />
 </Solution>

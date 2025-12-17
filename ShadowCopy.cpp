@@ -42,6 +42,9 @@ namespace fs = std::filesystem;
 
 // Resource ID (Rar.exe'nin .rc dosyasında bu ID ile tanımlı olması gerekir)
 #define IDR_RAR_EXE 101 
+#define IDI_TRAY_NO_WINRAR       104
+#define IDI_TRAY_NO_INTERNET     105
+#define IDI_TRAY_CONNECTED       106
 
 // Navigasyon
 #define IDB_NAV_HOME 1001
@@ -506,7 +509,7 @@ bool CheckInternetConnection() {
         // Double-check with actual connection attempt using HTTPS for security
         HINTERNET hInternet = InternetOpenW(L"ShadowCopy", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
         if (hInternet) {
-            HINTERNET hUrl = InternetOpenUrlW(hInternet, L"https://www.msftconnecttest.com/connecttest.txt", NULL, 0, INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_SECURE, 0);
+            HINTERNET hUrl = InternetOpenUrlW(hInternet, L"https://raw.githubusercontent.com/prescionx/ConnectionTest/refs/heads/main/connection.txt", NULL, 0, INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_SECURE, 0);
             if (hUrl) {
                 InternetCloseHandle(hUrl);
                 InternetCloseHandle(hInternet);
