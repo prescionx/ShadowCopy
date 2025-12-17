@@ -93,6 +93,11 @@ const COLORREF CLR_SUCCESS = RGB(25, 135, 84);
 const int NAVBAR_HEIGHT = 60;
 const int FOOTER_HEIGHT = 30;
 const int PROGRESS_BAR_HEIGHT = 4;
+const int TAB_COUNT = 4;
+
+// Network test constants
+const wchar_t* SPEED_TEST_URL = L"https://speed.cloudflare.com/__down?bytes=1000000";
+const DWORD SPEED_TEST_SIZE = 1000000;  // 1MB
 
 // --- GLOBAL DEĞİŞKENLER ---
 HINSTANCE g_hInst = NULL;
@@ -140,7 +145,7 @@ HWND g_hEditAuthKey, g_hCheckAutoUpload;
 HWND g_hLonelithFileList;
 HWND g_hSpeedTestResult;
 
-std::vector<HWND> g_tabControls[4];  // Changed from 3 to 4 for new Lonelith tab
+std::vector<HWND> g_tabControls[TAB_COUNT];
 
 int g_currentTab = 0;
 const wchar_t* CLASS_NAME = L"ShadowCopierApp";
@@ -202,7 +207,7 @@ HWND CreateCtrl(int tabIndex, LPCWSTR lpClassName, LPCWSTR lpWindowName, DWORD d
     // No sidebar adjustment needed - top navbar layout
     int adjustedY = y + NAVBAR_HEIGHT;
     HWND hCtrl = CreateWindowW(lpClassName, lpWindowName, dwStyle, x, adjustedY, nWidth, nHeight, hParent, hMenu, g_hInst, NULL);
-    if (tabIndex >= 0 && tabIndex < 4) {
+    if (tabIndex >= 0 && tabIndex < TAB_COUNT) {
         g_tabControls[tabIndex].push_back(hCtrl);
     }
     return hCtrl;
@@ -779,9 +784,9 @@ void TestInternetSpeed() {
     if (hInternet) {
         DWORD startTime = GetTickCount();
         
-        // Download a small test file (1MB)
+        // Download test file
         HINTERNET hUrl = InternetOpenUrlW(hInternet, 
-            L"https://speed.cloudflare.com/__down?bytes=1000000", 
+            SPEED_TEST_URL, 
             NULL, 0, 
             INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_RELOAD, 0);
         
@@ -792,7 +797,7 @@ void TestInternetSpeed() {
             
             while (InternetReadFile(hUrl, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
                 totalBytes += bytesRead;
-                UpdateProgressBar((totalBytes * 100) / 1000000, false);
+                UpdateProgressBar((totalBytes * 100) / SPEED_TEST_SIZE, false);
             }
             
             DWORD elapsedMs = GetTickCount() - startTime;
@@ -885,6 +890,10 @@ void AnimatePasswordBox(HWND hEdit, bool shake) {
         GetWindowRect(hEdit, &rc);
         POINT pt = {rc.left, rc.top};
         ScreenToClient(GetParent(hEdit), &pt);
+        
+        // Note: Using Sleep() for shake animation is intentional
+        // This blocks the UI briefly (300ms total) to provide immediate visual feedback
+        // Alternative: Use SetTimer for non-blocking animation if needed
         
         // Shake animation
         for (int i = 0; i < 3; i++) {
@@ -1401,7 +1410,7 @@ void SwitchTab(int index)
 {
     SetupPageTransition(g_currentTab, index);
     g_currentTab = index;
-    for (int i = 0; i < 4; i++) for (HWND hCtrl : g_tabControls[i]) ShowWindow(hCtrl, SW_HIDE);
+    for (int i = 0; i < TAB_COUNT; i++) for (HWND hCtrl : g_tabControls[i]) ShowWindow(hCtrl, SW_HIDE);
     for (HWND hCtrl : g_tabControls[index]) ShowWindow(hCtrl, SW_SHOW);
     if (index == 2) SetWindowTextW(g_hInfoText, GetSystemInfo().c_str());
     if (index == 3) {
