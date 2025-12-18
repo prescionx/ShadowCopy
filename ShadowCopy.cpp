@@ -2482,8 +2482,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_DRAWITEM:
     {
         LPDRAWITEMSTRUCT pDIS = (LPDRAWITEMSTRUCT)lParam;
-        // Nav buttons and special buttons
-        if (pDIS->CtlID >= 1000 && pDIS->CtlID <= 1010) {
+        // Nav buttons and special buttons (including IDB_NAV_CUSTOMIZATION at 1013)
+        if ((pDIS->CtlID >= 1000 && pDIS->CtlID <= 1010) || pDIS->CtlID == IDB_NAV_CUSTOMIZATION) {
             PaintNavButton(pDIS);
             return TRUE;
         }
