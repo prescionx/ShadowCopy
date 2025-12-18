@@ -21,7 +21,8 @@ ShadowCopy is a secure USB backup application that automatically encrypts and ba
 
 ### UI/UX Improvements (Latest Release)
 - **NEW**: Top horizontal navigation bar (replaces left sidebar)
-- **NEW**: 4 tabs: Home, Settings, System Info, Lonelith
+- **NEW**: 5 tabs: Home, Lonelith, Settings, System Info, Customization
+- **NEW**: Customization tab with theme and tray icon selection
 - **NEW**: Footer progress bar with marquee and actual progress modes
 - **NEW**: Password entry shake animation on error
 - **NEW**: Window titlebar icon
@@ -52,10 +53,12 @@ The system tray icon dynamically changes to reflect current status:
 2. **World with !** - No internet connection (warning)
 3. **Green Checkmark** - All systems operational and connected
 
+**Manual Tray Icon Selection**: Users can manually override the automatic tray icon through the Customization tab. The icon changes immediately without requiring an application restart.
+
 ## Configuration
 
 ### UI Layout
-- **Top Navigation**: 60px high horizontal navbar with 4 tabs
+- **Top Navigation**: 60px high horizontal navbar with 5 tabs
 - **Footer**: 30px high with 4px progress bar
 - **Content Area**: Between navbar and footer
 - **Progress States**: Marquee (idle) or Actual (0-100%)
@@ -67,6 +70,17 @@ The system tray icon dynamically changes to reflect current status:
 4. Enable **Auto-Upload** checkbox for automatic uploads
 5. Use **🚀 Hız Testi Yap** to test internet speed
 6. Use **⬆️ Manuel Yükle** to upload files on-demand
+
+### Customization Settings
+1. Navigate to **Customization** tab (🎨 Tema icon)
+2. **Progress Bar Mode**: Choose between Auto, Marquee, Progress, or Custom modes
+3. **Tray Icon Selection**: Manually select the system tray icon
+   - Varsayılan (Default): Auto-updates based on system state
+   - WinRAR Bulunamadı: Shows red X icon
+   - İnternet Yok: Shows warning icon
+   - Bağlantılı: Shows green checkmark icon
+4. Click **🎨 Uygula** to apply tray icon changes immediately (no restart needed)
+5. Use the theme toggle button in the navigation bar to switch between dark and light themes
 
 ### Auth Key Storage
 The Lonelith authentication key is stored encrypted in the Windows registry at:
@@ -82,6 +96,9 @@ All settings are saved to registry:
 - Start in tray
 - Leave goodbye note
 - Auto-upload option
+- Theme preference (dark/light mode)
+- Progress bar mode
+- Manual tray icon selection
 
 ### Network Features
 - **Speed Test**: Automatically runs on first internet connection
@@ -152,10 +169,8 @@ Currently using placeholder icons (copies of small.ico).
 - Secure registry storage for all sensitive data
 
 ### Documentation
-- `FEATURE_IMPLEMENTATION.md` - Complete feature documentation
 - `LONELITH_INTEGRATION.md` - API integration guide
-- `STATUS.md` - Previous implementation status
-- `IMPLEMENTATION_SUMMARY.md` - Technical details
+- `README.md` - Complete user documentation
 
 ## License
 
