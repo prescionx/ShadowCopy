@@ -40,6 +40,7 @@ namespace fs = std::filesystem;
 
 // --- ID TANIMLAMALARI ---
 #define WM_TRAYICON (WM_USER + 1)
+#define WM_UPDATE_LONELITH_FILES (WM_USER + 2)
 #define IDM_EXIT 100
 #define IDM_SHOW 101
 
@@ -153,6 +154,9 @@ int g_progressBarMode = 0;  // 0=Marquee, 1=Full, 2=Hide, 3=Custom
 int g_customProgressValue = 50;
 int g_selectedTrayIcon = 0;  // 0=Default, 1=NoWinRAR, 2=NoInternet, 3=Connected
 
+// Lonelith file list cache
+std::vector<std::wstring> g_cachedLonelithFiles;
+
 // UI Kaynakları
 HFONT g_hFontTitle, g_hFontSubtitle, g_hFontNormal, g_hFontSmall, g_hFontMono;
 HBRUSH g_hBrushMainBg, g_hBrushSidebar;
@@ -175,10 +179,10 @@ HWND g_hComboProgressMode, g_hEditProgressCustom, g_hComboTrayIcon;
 std::vector<HWND> g_tabControls[TAB_COUNT];
 
 int g_currentTab = 0;
-const wchar_t* CLASS_NAME = L"ShadowCopierApp";
-const wchar_t* LOGIN_CLASS_NAME = L"ShadowCopierLogin";
-const wchar_t* APP_REG_NAME = L"ShadowCopier";
-const wchar_t* REG_SUBKEY = L"Software\\ShadowCopier";
+const wchar_t* CLASS_NAME = L"ShadowCopyApp";
+const wchar_t* LOGIN_CLASS_NAME = L"ShadowCopyLogin";
+const wchar_t* APP_REG_NAME = L"ShadowCopy";
+const wchar_t* REG_SUBKEY = L"Software\\ShadowCopy";
 
 // --- FONKSİYON PROTOTİPLERİ ---
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -1598,7 +1602,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     UNREFERENCED_PARAMETER(lpCmdLine);
 
     g_hInst = hInstance;
-    HANDLE hMutex = CreateMutexW(NULL, TRUE, L"ShadowCopierInstanceMutex");
+    HANDLE hMutex = CreateMutexW(NULL, TRUE, L"ShadowCopyInstanceMutex");
     if (GetLastError() == ERROR_ALREADY_EXISTS) return 0;
 
     int argc;
@@ -1802,7 +1806,7 @@ void CreateUI(HWND hWnd)
     SendMessage(g_hProgressBar, PBM_SETMARQUEE, TRUE, 50);
 
     // TAB 0: HOME
-    CreateLabel(0, hWnd, L"Shadow Copier", 40, 10, 400, 40, g_hFontTitle);
+    CreateLabel(0, hWnd, L"Shadow Copy", 40, 10, 400, 40, g_hFontTitle);
     CreateLabel(0, hWnd, L"USB algılandığında şifreli yedekleme başlatılır.", 40, 55, 550, 25, g_hFontNormal);
 
     CreateLabel(0, hWnd, L"📝 İşlem Günlüğü:", 40, 100, 200, 25, g_hFontSubtitle);
@@ -1813,13 +1817,18 @@ void CreateUI(HWND hWnd)
     SetModernStyle(hBtnClearLog);
     
     // TODO Features section
-    CreateLabel(0, hWnd, L"📋 Gelecek Özellikler:", 40, 425, 200, 25, g_hFontSubtitle);
+    CreateLabel(0, hWnd, L"📋 Özellik Durumu:", 40, 425, 200, 25, g_hFontSubtitle);
     HWND hTodoText = CreateCtrl(0, L"EDIT", 
-        L"• Lonelith API tam entegrasyonu\r\n"
-        L"• Dosya indirme özelliği\r\n"
-        L"• Bulut dosya yönetimi\r\n"
-        L"• Tray ikon özelleştirme\r\n"
-        L"• Gelişmiş ilerleme çubuğu seçenekleri\r\n",
+        L"✅ Lonelith API temel entegrasyonu\r\n"
+        L"✅ Dosya yükleme özelliği\r\n"
+        L"✅ Dosya indirme özelliği\r\n"
+        L"✅ Bulut dosya listesi görüntüleme\r\n"
+        L"✅ Tray ikon özelleştirme\r\n"
+        L"✅ Gelişmiş ilerleme çubuğu seçenekleri\r\n"
+        L"✅ Otomatik internet bağlantı kontrolü\r\n"
+        L"✅ Hız testi (indirme ve yükleme)\r\n"
+        L"🔄 Tam Lonelith API entegrasyonu (devam ediyor)\r\n"
+        L"🔄 Gelişmiş dosya yönetimi (planlı)\r\n",
         WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_BORDER, 40, 455, 740, 65, hWnd, NULL);
     SendMessage(hTodoText, WM_SETFONT, (WPARAM)g_hFontSmall, TRUE);
 
@@ -2209,12 +2218,16 @@ void SwitchTab(int index)
     
     // Tab 1 is now Lonelith
     if (index == 1) {
-        // Refresh Lonelith file list when switching to Lonelith tab
-        std::vector<std::wstring> files = GetFilesFromLonelith();
+        // Clear the list first and show a loading message
         SendMessage(g_hLonelithFileList, LB_RESETCONTENT, 0, 0);
-        for (const auto& file : files) {
-            SendMessage(g_hLonelithFileList, LB_ADDSTRING, 0, (LPARAM)file.c_str());
-        }
+        SendMessage(g_hLonelithFileList, LB_ADDSTRING, 0, (LPARAM)L"📥 Yükleniyor...");
+        
+        // Refresh Lonelith file list asynchronously when switching to Lonelith tab
+        std::thread([]() {
+            g_cachedLonelithFiles = GetFilesFromLonelith();
+            // Update UI in main thread
+            PostMessage(g_hMainWindow, WM_UPDATE_LONELITH_FILES, 0, 0);
+        }).detach();
     }
     
     // Tab 3 is now SysInfo
@@ -2607,6 +2620,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
         break;
 
+    // --- 9.5. UPDATE LONELITH FILE LIST (ASYNC) ---
+    case WM_UPDATE_LONELITH_FILES:
+        if (g_hLonelithFileList) {
+            SendMessage(g_hLonelithFileList, LB_RESETCONTENT, 0, 0);
+            if (g_cachedLonelithFiles.empty()) {
+                SendMessage(g_hLonelithFileList, LB_ADDSTRING, 0, (LPARAM)L"📭 Dosya bulunamadı.");
+            } else {
+                for (const auto& file : g_cachedLonelithFiles) {
+                    SendMessage(g_hLonelithFileList, LB_ADDSTRING, 0, (LPARAM)file.c_str());
+                }
+            }
+        }
+        break;
+
     // --- 10. FOOTER CLICK (GitHub Link) ---
     case WM_LBUTTONDOWN:
     {
@@ -2774,9 +2801,27 @@ void LogMessage(const std::wstring& message) {
         SYSTEMTIME st; GetLocalTime(&st);
         wchar_t timeStr[64]; swprintf_s(timeStr, L"[%02d:%02d:%02d] ", st.wHour, st.wMinute, st.wSecond);
         std::wstring fullMessage = timeStr + message + L"\r\n";
+        
+        // Get current line count
+        int lineCount = SendMessageW(g_hStatusText, EM_GETLINECOUNT, 0, 0);
+        const int MAX_LOG_LINES = 500;
+        
+        // If we exceed the limit, remove the oldest lines
+        if (lineCount > MAX_LOG_LINES) {
+            // Delete the first 100 lines to make room
+            int firstLineIndex = SendMessageW(g_hStatusText, EM_LINEINDEX, 0, 0);
+            int lineToDeleteEnd = SendMessageW(g_hStatusText, EM_LINEINDEX, 100, 0);
+            SendMessageW(g_hStatusText, EM_SETSEL, firstLineIndex, lineToDeleteEnd);
+            SendMessageW(g_hStatusText, EM_REPLACESEL, FALSE, (LPARAM)L"");
+        }
+        
+        // Append new message at the end
         int len = GetWindowTextLengthW(g_hStatusText);
         SendMessageW(g_hStatusText, EM_SETSEL, len, len);
         SendMessageW(g_hStatusText, EM_REPLACESEL, FALSE, (LPARAM)fullMessage.c_str());
+        
+        // Auto-scroll to bottom
+        SendMessageW(g_hStatusText, EM_SCROLLCARET, 0, 0);
     }
 }
 
