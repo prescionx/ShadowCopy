@@ -200,6 +200,7 @@ HBRUSH g_hBrushMainBg, g_hBrushSidebar;
 
 // Global Kontrol Handle'ları
 HWND g_hNavBtnHome, g_hNavBtnSettings, g_hNavBtnInfo, g_hNavBtnLonelith, g_hNavBtnCustomization;
+HWND g_hThemeToggleBtn;  // Theme toggle button handle
 HWND g_hPathDisplay, g_hStatusText;
 HWND g_hCheckStartup, g_hCheckSilent, g_hEditDefaultPath, g_hCheckStartTray, g_hCheckGoodbye;
 HWND g_hEditPassword;
@@ -1848,6 +1849,8 @@ void StyleTextBox(HWND hEdit, bool isMultiline) {
     if (!isMultiline) {
         SendMessage(hEdit, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELONG(5, 5));
     }
+    // Note: This function is available for future use. Currently, textboxes are styled
+    // manually in CreateUI for consistency with existing code patterns.
 }
 
 // --- UI OLUŞTURMA ---
@@ -1869,10 +1872,10 @@ void CreateUI(HWND hWnd)
     RECT clientRect;
     GetClientRect(hWnd, &clientRect);
     int themeToggleX = clientRect.right - 160;
-    HWND hBtnThemeToggle = CreateWindowW(L"BUTTON", g_isDarkMode ? L"☀️ Light Mode" : L"🌙 Dark Mode", 
+    g_hThemeToggleBtn = CreateWindowW(L"BUTTON", g_isDarkMode ? L"☀️ Light Mode" : L"🌙 Dark Mode", 
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, themeToggleX, 10, 140, 40, hWnd, (HMENU)IDB_TOGGLE_THEME, g_hInst, NULL);
-    SendMessage(hBtnThemeToggle, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
-    SetModernStyle(hBtnThemeToggle);
+    SendMessage(g_hThemeToggleBtn, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    SetModernStyle(g_hThemeToggleBtn);
 
     // Create progress bar in footer
     int footerY = clientRect.bottom - FOOTER_HEIGHT;
@@ -3195,14 +3198,19 @@ void ApplyTheme() {
     if (g_hBrushMainBg) DeleteObject(g_hBrushMainBg);
     if (g_hBrushSidebar) DeleteObject(g_hBrushSidebar);
     if (g_hBrushEdit) DeleteObject(g_hBrushEdit);
+    
     g_hBrushMainBg = CreateSolidBrush(CLR_BG_MAIN);
     g_hBrushSidebar = CreateSolidBrush(CLR_BG_SIDEBAR);
     g_hBrushEdit = CreateSolidBrush(CLR_INPUT_BG);
     
+    // If brush creation fails, create a safe default
+    if (!g_hBrushMainBg) g_hBrushMainBg = (HBRUSH)GetStockObject(LTGRAY_BRUSH);
+    if (!g_hBrushSidebar) g_hBrushSidebar = (HBRUSH)GetStockObject(GRAY_BRUSH);
+    if (!g_hBrushEdit) g_hBrushEdit = (HBRUSH)GetStockObject(WHITE_BRUSH);
+    
     // Update theme toggle button text
-    HWND hThemeBtn = GetDlgItem(g_hMainWindow, IDB_TOGGLE_THEME);
-    if (hThemeBtn) {
-        SetWindowTextW(hThemeBtn, g_isDarkMode ? L"☀️ Light Mode" : L"🌙 Dark Mode");
+    if (g_hThemeToggleBtn) {
+        SetWindowTextW(g_hThemeToggleBtn, g_isDarkMode ? L"☀️ Light Mode" : L"🌙 Dark Mode");
     }
     
     // Force complete window redraw
