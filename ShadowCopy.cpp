@@ -993,13 +993,18 @@ std::vector<std::wstring> GetFilesFromLonelith() {
         LogMessage(L"Yanıt: " + std::wstring(wideResponse.data()));
         
         // Simple parsing: look for quoted strings (filenames)
+        // Note: This is basic parsing and may not handle all JSON edge cases
+        // For production, consider using a JSON library
         std::wstring responseStr(wideResponse.data());
         size_t pos = 0;
         while ((pos = responseStr.find(L'"', pos)) != std::wstring::npos) {
             size_t endPos = responseStr.find(L'"', pos + 1);
             if (endPos != std::wstring::npos) {
                 std::wstring filename = responseStr.substr(pos + 1, endPos - pos - 1);
-                if (!filename.empty() && filename.find(L'.') != std::wstring::npos) {
+                // Accept any non-empty filename (not just those with dots)
+                if (!filename.empty() && filename.length() > 0 && 
+                    filename.find(L'{') == std::wstring::npos && 
+                    filename.find(L'}') == std::wstring::npos) {
                     files.push_back(filename);
                 }
                 pos = endPos + 1;
@@ -1098,7 +1103,15 @@ bool ShowFileOnLonelith(const std::wstring& fileId) {
     
     // Save to downloads folder
     wchar_t downloadsPath[MAX_PATH];
-    if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_PERSONAL, NULL, 0, downloadsPath))) {
+    // Use CSIDL_DOWNLOADS for Downloads folder (Vista+)
+    // Falls back to Documents if Downloads folder is not available
+    HRESULT hr = SHGetFolderPathW(NULL, CSIDL_DOWNLOADS, NULL, 0, downloadsPath);
+    if (FAILED(hr)) {
+        // Fallback to Documents folder for older Windows versions
+        hr = SHGetFolderPathW(NULL, CSIDL_PERSONAL, NULL, 0, downloadsPath);
+    }
+    
+    if (SUCCEEDED(hr)) {
         std::wstring savePath = std::wstring(downloadsPath) + L"\\" + fileId;
         
         // Read and save file
@@ -1211,13 +1224,13 @@ void TestUploadSpeed() {
     
     LogMessage(L"🚀 Yükleme hız testi başlatılıyor...");
     
-    // Simple upload test: Try to upload test data to a test endpoint
-    // Since we don't have a real upload endpoint, we'll simulate with a POST request
-    // In production, this should POST to a real speed test server
+    // Note: Using httpbin.org for testing (a common HTTP testing service)
+    // If this service is unavailable, the test will fail gracefully
+    // Consider making this configurable for production use
     
     HINTERNET hInternet = InternetOpenW(L"ShadowCopy", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
     if (hInternet) {
-        // Use httpbin.org for testing (a common HTTP testing service)
+        // Use httpbin.org for testing
         HINTERNET hConnect = InternetConnectW(hInternet, L"httpbin.org", INTERNET_DEFAULT_HTTP_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
         
         if (hConnect) {
@@ -1504,12 +1517,29 @@ void ApplyProgressBarMode() {
                     GetWindowLongPtr(g_hProgressBar, GWL_STYLE) & ~PBS_MARQUEE);
                 SendMessage(g_hProgressBar, PBM_SETMARQUEE, FALSE, 0);
                 
-                // Get custom value from edit box
+                // Get custom value from edit box with validation
                 wchar_t buf[16];
                 GetWindowTextW(g_hEditProgressCustom, buf, 16);
-                int customValue = _wtoi(buf);
-                if (customValue < 0) customValue = 0;
-                if (customValue > 100) customValue = 100;
+                
+                // Validate that it's a number
+                bool isValid = true;
+                for (int i = 0; buf[i] != L'\0'; i++) {
+                    if (!iswdigit(buf[i])) {
+                        isValid = false;
+                        break;
+                    }
+                }
+                
+                int customValue = 50; // Default if invalid
+                if (isValid && buf[0] != L'\0') {
+                    customValue = _wtoi(buf);
+                    if (customValue < 0) customValue = 0;
+                    if (customValue > 100) customValue = 100;
+                } else {
+                    // Invalid input, set to default and update UI
+                    SetWindowTextW(g_hEditProgressCustom, L"50");
+                }
+                
                 g_customProgressValue = customValue;
                 
                 SendMessage(g_hProgressBar, PBM_SETPOS, customValue, 0);
