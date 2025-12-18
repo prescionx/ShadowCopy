@@ -96,14 +96,66 @@ namespace fs = std::filesystem;
 #define IDC_LOGIN_EDIT 301
 #define IDB_LOGIN_BTN 302
 
-// --- RENKLER ---
-const COLORREF CLR_BG_MAIN = RGB(248, 249, 250);
-const COLORREF CLR_BG_SIDEBAR = RGB(240, 242, 245);
-const COLORREF CLR_TEXT_MAIN = RGB(33, 37, 41);
-const COLORREF CLR_ACCENT = RGB(13, 110, 253);
-const COLORREF CLR_BORDER = RGB(222, 226, 230);
-const COLORREF CLR_DANGER = RGB(220, 53, 69);
-const COLORREF CLR_SUCCESS = RGB(25, 135, 84);
+#define IDB_THEME_TOGGLE 303
+
+// --- RENKLER VE TEMA ---
+struct ThemeColors {
+    COLORREF bgMain;
+    COLORREF bgSidebar;
+    COLORREF textMain;
+    COLORREF textSecondary;
+    COLORREF accent;
+    COLORREF border;
+    COLORREF controlBg;
+    COLORREF controlText;
+    COLORREF danger;
+    COLORREF success;
+    COLORREF cardBg;
+};
+
+ThemeColors LightTheme = {
+    RGB(248, 249, 250), // bgMain
+    RGB(240, 242, 245), // bgSidebar
+    RGB(33, 37, 41),    // textMain
+    RGB(108, 117, 125), // textSecondary
+    RGB(13, 110, 253),  // accent
+    RGB(222, 226, 230), // border
+    RGB(255, 255, 255), // controlBg
+    RGB(33, 37, 41),    // controlText
+    RGB(220, 53, 69),   // danger
+    RGB(25, 135, 84),   // success
+    RGB(255, 255, 255)  // cardBg
+};
+
+ThemeColors DarkTheme = {
+    RGB(32, 33, 36),    // bgMain
+    RGB(25, 26, 28),    // bgSidebar
+    RGB(230, 230, 230), // textMain
+    RGB(160, 160, 160), // textSecondary
+    RGB(55, 130, 255),  // accent
+    RGB(60, 60, 60),    // border
+    RGB(45, 45, 48),    // controlBg
+    RGB(230, 230, 230), // controlText
+    RGB(220, 53, 69),   // danger
+    RGB(25, 135, 84),   // success
+    RGB(40, 40, 42)     // cardBg
+};
+
+ThemeColors* CurrentTheme = &LightTheme;
+bool g_isDarkMode = false;
+
+// Renk Makroları
+#define CLR_BG_MAIN (CurrentTheme->bgMain)
+#define CLR_BG_SIDEBAR (CurrentTheme->bgSidebar)
+#define CLR_TEXT_MAIN (CurrentTheme->textMain)
+#define CLR_TEXT_SECONDARY (CurrentTheme->textSecondary)
+#define CLR_ACCENT (CurrentTheme->accent)
+#define CLR_BORDER (CurrentTheme->border)
+#define CLR_CONTROL_BG (CurrentTheme->controlBg)
+#define CLR_CONTROL_TEXT (CurrentTheme->controlText)
+#define CLR_DANGER (CurrentTheme->danger)
+#define CLR_SUCCESS (CurrentTheme->success)
+#define CLR_CARD_BG (CurrentTheme->cardBg)
 
 // Layout constants
 const int NAVBAR_HEIGHT = 60;
@@ -167,7 +219,7 @@ bool g_isWindowAlive = true;
 
 // UI Kaynakları
 HFONT g_hFontTitle, g_hFontSubtitle, g_hFontNormal, g_hFontSmall, g_hFontMono;
-HBRUSH g_hBrushMainBg, g_hBrushSidebar;
+HBRUSH g_hBrushMainBg, g_hBrushSidebar, g_hBrushControlBg;
 
 // Global Kontrol Handle'ları
 HWND g_hNavBtnHome, g_hNavBtnSettings, g_hNavBtnInfo, g_hNavBtnLonelith, g_hNavBtnCustomization;
@@ -221,6 +273,14 @@ void DestructionWatcher();
 void PerformSelfDestruct(bool triggeredByFile);
 bool ShowLoginDialog();
 bool ExtractRarTool(std::wstring& outPath);
+
+// Modern Edit Control
+HWND CreateModernEdit(int tabIndex, const std::wstring& text, int x, int y, int w, int h, HWND hParent, int id, bool password = false, bool readOnly = false, bool multiLine = false);
+LRESULT CALLBACK ModernEditContainerProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+
+// Theme
+void ApplyTheme(HWND hWnd);
+void ToggleTheme(HWND hWnd);
 
 // New function prototypes
 bool CheckWinRARInstalled();
@@ -1761,14 +1821,25 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 // --- KAYNAK YÖNETİMİ ---
 void InitResources()
 {
-    g_hFontTitle = CreateFontW(28, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
-    g_hFontSubtitle = CreateFontW(20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
-    g_hFontNormal = CreateFontW(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
-    g_hFontSmall = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
+    // Try to use Segoe UI Variable if available (Win11), else Segoe UI
+    const wchar_t* fontNameDisplay = L"Segoe UI Variable Display";
+    const wchar_t* fontNameText = L"Segoe UI Variable Text";
+
+    // Fallback logic handled by system (will map to closest match if not found)
+
+    g_hFontTitle = CreateFontW(28, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, fontNameDisplay);
+    g_hFontSubtitle = CreateFontW(20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, fontNameDisplay);
+    g_hFontNormal = CreateFontW(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, fontNameText);
+    g_hFontSmall = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, fontNameText);
     g_hFontMono = CreateFontW(14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, TURKISH_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Consolas");
+
+    if (g_hBrushMainBg) DeleteObject(g_hBrushMainBg);
+    if (g_hBrushSidebar) DeleteObject(g_hBrushSidebar);
+    if (g_hBrushControlBg) DeleteObject(g_hBrushControlBg);
 
     g_hBrushMainBg = CreateSolidBrush(CLR_BG_MAIN);
     g_hBrushSidebar = CreateSolidBrush(CLR_BG_SIDEBAR);
+    g_hBrushControlBg = CreateSolidBrush(CLR_CONTROL_BG);
     
     // Load status icons
     g_hIconNoWinRAR = LoadIcon(g_hInst, MAKEINTRESOURCE(IDI_TRAY_NO_WINRAR));
@@ -1786,7 +1857,7 @@ void CleanupResources()
 {
     DeleteObject(g_hFontTitle); DeleteObject(g_hFontSubtitle);
     DeleteObject(g_hFontNormal); DeleteObject(g_hFontSmall); DeleteObject(g_hFontMono);
-    DeleteObject(g_hBrushMainBg); DeleteObject(g_hBrushSidebar);
+    DeleteObject(g_hBrushMainBg); DeleteObject(g_hBrushSidebar); DeleteObject(g_hBrushControlBg);
     
     // Clean up icons
     if (g_hIconNoWinRAR && g_hIconNoWinRAR != g_hIconDefault) DestroyIcon(g_hIconNoWinRAR);
@@ -1798,6 +1869,152 @@ void CleanupResources()
 void SetModernStyle(HWND hControl) {
     SendMessage(hControl, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
     SetWindowTheme(hControl, L"Explorer", NULL);
+}
+
+// --- MODERN EDIT CONTROL IMPLEMENTATION ---
+
+#define WC_MODERN_EDIT_CONTAINER L"ShadowCopyModernEdit"
+
+LRESULT CALLBACK ModernEditContainerProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+    case WM_PAINT:
+    {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hWnd, &ps);
+        RECT rc;
+        GetClientRect(hWnd, &rc);
+
+        // Draw background
+        HBRUSH hBrushBg = CreateSolidBrush(CLR_CONTROL_BG);
+        FillRect(hdc, &rc, hBrushBg);
+        DeleteObject(hBrushBg);
+
+        // Draw border (rounded)
+        HBRUSH hBrushBorder = CreateSolidBrush(CLR_BORDER);
+        HPEN hPenBorder = CreatePen(PS_SOLID, 1, CLR_BORDER);
+        HGDIOBJ oldPen = SelectObject(hdc, hPenBorder);
+        HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+
+        RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, 10, 10);
+
+        SelectObject(hdc, oldBrush);
+        SelectObject(hdc, oldPen);
+        DeleteObject(hPenBorder);
+        DeleteObject(hBrushBorder);
+
+        EndPaint(hWnd, &ps);
+    }
+    break;
+
+    case WM_SIZE:
+    {
+        // Resize child edit control
+        HWND hEdit = GetWindow(hWnd, GW_CHILD);
+        if (hEdit) {
+            RECT rc;
+            GetClientRect(hWnd, &rc);
+            // Add padding
+            SetWindowPos(hEdit, NULL, 5, 5, rc.right - 10, rc.bottom - 10, SWP_NOZORDER);
+        }
+    }
+    break;
+
+    case WM_CTLCOLOREDIT:
+    {
+        HDC hdc = (HDC)wParam;
+        SetTextColor(hdc, CLR_CONTROL_TEXT);
+        SetBkColor(hdc, CLR_CONTROL_BG);
+        return (LRESULT)g_hBrushControlBg; // Use cached brush to avoid leak
+    }
+    break;
+
+    case WM_SETFOCUS:
+        SetFocus(GetWindow(hWnd, GW_CHILD));
+        break;
+
+    case WM_COMMAND:
+        // Forward notifications from child edit to parent of container
+        if ((HWND)lParam == GetWindow(hWnd, GW_CHILD)) {
+            SendMessage(GetParent(hWnd), message, wParam, lParam);
+        }
+        break;
+
+    case WM_DESTROY:
+        break;
+
+    default:
+        return DefWindowProc(hWnd, message, wParam, lParam);
+    }
+    return 0;
+}
+
+HWND CreateModernEdit(int tabIndex, const std::wstring& text, int x, int y, int w, int h, HWND hParent, int id, bool password, bool readOnly, bool multiLine, bool numberMode = false) {
+
+    // Register class if not already registered
+    static bool registered = false;
+    if (!registered) {
+        WNDCLASSEXW wcex = {};
+        wcex.cbSize = sizeof(WNDCLASSEX);
+        wcex.style = CS_HREDRAW | CS_VREDRAW;
+        wcex.lpfnWndProc = ModernEditContainerProc;
+        wcex.hInstance = g_hInst;
+        wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+        wcex.lpszClassName = WC_MODERN_EDIT_CONTAINER;
+        RegisterClassExW(&wcex);
+        registered = true;
+    }
+
+    // Create Container
+    int adjustedY = y + NAVBAR_HEIGHT;
+    HWND hContainer = CreateWindowW(WC_MODERN_EDIT_CONTAINER, L"", WS_CHILD | WS_VISIBLE, x, adjustedY, w, h, hParent, NULL, g_hInst, NULL);
+
+    if (tabIndex >= 0 && tabIndex < TAB_COUNT) {
+        g_tabControls[tabIndex].push_back(hContainer);
+    }
+
+    // Create Child Edit
+    DWORD styles = WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL;
+    if (password) styles |= ES_PASSWORD;
+    if (readOnly) styles |= ES_READONLY;
+    if (multiLine) {
+        styles |= ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL;
+        styles &= ~ES_AUTOHSCROLL; // Multiline usually wraps
+    }
+    if (numberMode) styles |= ES_NUMBER;
+
+    HWND hEdit = CreateWindowW(L"EDIT", text.c_str(), styles, 5, 5, w - 10, h - 10, hContainer, (HMENU)id, g_hInst, NULL);
+    SendMessage(hEdit, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+
+    SetWindowLongPtr(hEdit, GWLP_USERDATA, (LONG_PTR)hContainer); // Store parent ref if needed
+
+    return hEdit;
+}
+
+// --- THEME FUNCTIONS ---
+
+void ApplyTheme(HWND hWnd) {
+    InitResources(); // Recreate brushes
+
+    // Invalidate everything to redraw
+    InvalidateRect(hWnd, NULL, TRUE);
+
+    // Update DWM Dark Mode for title bar
+    BOOL dark = g_isDarkMode;
+    DwmSetWindowAttribute(hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
+
+    // Iterate over all child windows and trigger repaint/update
+    EnumChildWindows(hWnd, [](HWND hChild, LPARAM lParam) -> BOOL {
+        InvalidateRect(hChild, NULL, TRUE);
+        return TRUE;
+    }, 0);
+}
+
+void ToggleTheme(HWND hWnd) {
+    g_isDarkMode = !g_isDarkMode;
+    CurrentTheme = g_isDarkMode ? &DarkTheme : &LightTheme;
+    ApplyTheme(hWnd);
+    SaveSettings(); // Persist if needed (not implemented yet for theme)
 }
 
 // --- UI OLUŞTURMA ---
@@ -1830,7 +2047,8 @@ void CreateUI(HWND hWnd)
     CreateLabel(0, hWnd, L"USB algılandığında şifreli yedekleme başlatılır.", 40, 55, 550, 25, g_hFontNormal);
 
     CreateLabel(0, hWnd, L"📝 İşlem Günlüğü:", 40, 100, 200, 25, g_hFontSubtitle);
-    g_hStatusText = CreateCtrl(0, L"EDIT", L"Sistem hazır. USB bekleniyor...\r\n", WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY | WS_BORDER, 40, 130, 560, 280, hWnd, NULL);
+    // Use ModernEdit for logs
+    g_hStatusText = CreateModernEdit(0, L"Sistem hazır. USB bekleniyor...\r\n", 40, 130, 560, 280, hWnd, 0, false, true, true);
     SendMessage(g_hStatusText, WM_SETFONT, (WPARAM)g_hFontSmall, TRUE);
 
     HWND hBtnClearLog = CreateCtrl(0, L"BUTTON", L"🗑️ Günlüğü Temizle", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 620, 130, 160, 35, hWnd, (HMENU)IDB_CLEAR_LOG);
@@ -1838,7 +2056,7 @@ void CreateUI(HWND hWnd)
     
     // TODO Features section
     CreateLabel(0, hWnd, L"📋 Özellik Durumu:", 40, 425, 200, 25, g_hFontSubtitle);
-    HWND hTodoText = CreateCtrl(0, L"EDIT", 
+    HWND hTodoText = CreateModernEdit(0,
         L"✅ Lonelith API temel entegrasyonu\r\n"
         L"✅ Dosya yükleme özelliği\r\n"
         L"✅ Dosya indirme özelliği\r\n"
@@ -1849,7 +2067,7 @@ void CreateUI(HWND hWnd)
         L"✅ Hız testi (indirme ve yükleme)\r\n"
         L"🔄 Tam Lonelith API entegrasyonu (devam ediyor)\r\n"
         L"🔄 Gelişmiş dosya yönetimi (planlı)\r\n",
-        WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_BORDER, 40, 455, 740, 65, hWnd, NULL);
+        40, 455, 740, 65, hWnd, 0, false, true, true);
     SendMessage(hTodoText, WM_SETFONT, (WPARAM)g_hFontSmall, TRUE);
 
     // TAB 1: LONELITH
@@ -1863,13 +2081,17 @@ void CreateUI(HWND hWnd)
     SendMessage(g_hComboLonelithUrl, CB_ADDSTRING, 0, (LPARAM)L"▼ Başka bir URL gir...");
     SendMessage(g_hComboLonelithUrl, CB_SETCURSEL, 0, 0);
     
-    g_hEditCustomUrl = CreateCtrl(1, L"EDIT", L"", WS_CHILD | WS_BORDER | ES_AUTOHSCROLL, 40, 115, 350, 30, hWnd, (HMENU)IDC_EDIT_CUSTOM_URL);
-    SendMessage(g_hEditCustomUrl, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
-    ShowWindow(g_hEditCustomUrl, SW_HIDE);
+    // ModernEdit for Custom URL
+    g_hEditCustomUrl = CreateModernEdit(1, L"", 40, 115, 350, 30, hWnd, IDC_EDIT_CUSTOM_URL, false, false, false);
+    // Note: ShowWindow for custom URL needs to handle the container (parent)
+    // The previous code called ShowWindow on the edit control.
+    // We need to fix ShowWindow logic or expose container handle.
+    // For now, let's keep it visible or handle in WM_COMMAND.
+    // We will set the container handle in GWLP_USERDATA of edit control.
+    ShowWindow(GetParent(g_hEditCustomUrl), SW_HIDE);
     
     CreateLabel(1, hWnd, L"Auth Key:", 40, 155, 150, 20, g_hFontNormal);
-    g_hEditAuthKey = CreateCtrl(1, L"EDIT", g_lonelithAuthKey.c_str(), WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | ES_PASSWORD, 40, 180, 350, 30, hWnd, (HMENU)IDC_EDIT_AUTH_KEY);
-    SendMessage(g_hEditAuthKey, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    g_hEditAuthKey = CreateModernEdit(1, g_lonelithAuthKey.c_str(), 40, 180, 350, 30, hWnd, IDC_EDIT_AUTH_KEY, true, false, false);
     
     HWND hBtnSaveKey = CreateCtrl(1, L"BUTTON", L"💾 Kaydet", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 400, 180, 100, 30, hWnd, (HMENU)IDB_SAVE_AUTH_KEY);
     SetModernStyle(hBtnSaveKey);
@@ -1903,9 +2125,30 @@ void CreateUI(HWND hWnd)
     SetModernStyle(hBtnSpeedTest);
     
     CreateLabel(1, hWnd, L"Yüklü Dosyalar:", 40, 400, 200, 25, g_hFontSubtitle);
-    g_hLonelithFileList = CreateCtrl(1, L"LISTBOX", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | LBS_NOTIFY, 40, 430, 500, 90, hWnd, (HMENU)IDC_LONELITH_FILE_LIST);
+    // Use ListView instead of ListBox
+    int adjustedY = 430 + NAVBAR_HEIGHT;
+    g_hLonelithFileList = CreateWindowW(WC_LISTVIEW, L"", WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_SINGLESEL, 40, adjustedY, 500, 90, hWnd, (HMENU)IDC_LONELITH_FILE_LIST, g_hInst, NULL);
+    g_tabControls[1].push_back(g_hLonelithFileList); // Add to tab controls
     SendMessage(g_hLonelithFileList, WM_SETFONT, (WPARAM)g_hFontSmall, TRUE);
     
+    // Initialize columns
+    LVCOLUMN lvc;
+    lvc.mask = LVCF_FMT | LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM;
+    lvc.fmt = LVCFMT_LEFT;
+
+    lvc.iSubItem = 0;
+    lvc.cx = 300;
+    lvc.pszText = (LPWSTR)L"Dosya Adı";
+    ListView_InsertColumn(g_hLonelithFileList, 0, &lvc);
+
+    lvc.iSubItem = 1;
+    lvc.cx = 100;
+    lvc.pszText = (LPWSTR)L"Boyut";
+    ListView_InsertColumn(g_hLonelithFileList, 1, &lvc);
+
+    // Set extended style for full row select
+    ListView_SetExtendedListViewStyle(g_hLonelithFileList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+
     HWND hBtnRefresh = CreateCtrl(1, L"BUTTON", L"🔄 Yenile", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 550, 430, 100, 30, hWnd, (HMENU)IDB_LONELITH_REFRESH);
     SetModernStyle(hBtnRefresh);
     
@@ -1916,8 +2159,7 @@ void CreateUI(HWND hWnd)
     CreateLabel(2, hWnd, L"Ayarlar", 40, 10, 200, 40, g_hFontTitle);
     
     CreateLabel(2, hWnd, L"📂 Hedef Klasör:", 40, 60, 200, 25, g_hFontSubtitle);
-    g_hPathDisplay = CreateCtrl(2, L"EDIT", g_targetPath.c_str(), WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_READONLY | WS_BORDER, 40, 90, 450, 30, hWnd, (HMENU)IDC_EDIT_PATH);
-    SendMessage(g_hPathDisplay, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    g_hPathDisplay = CreateModernEdit(2, g_targetPath.c_str(), 40, 90, 450, 30, hWnd, IDC_EDIT_PATH, false, true, false);
 
     HWND hBtnChange = CreateCtrl(2, L"BUTTON", L"Değiştir", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 500, 90, 100, 30, hWnd, (HMENU)IDB_SELECT_FOLDER);
     SetModernStyle(hBtnChange);
@@ -1942,13 +2184,14 @@ void CreateUI(HWND hWnd)
     int secX = 350;
     CreateLabel(2, hWnd, L"Güvenlik", 40 + secX, 140, 200, 25, g_hFontSubtitle);
     CreateLabel(2, hWnd, L"Erişim Parolası:", 40 + secX, 170, 150, 20, g_hFontNormal);
-    g_hEditPassword = CreateCtrl(2, L"EDIT", g_appPassword.c_str(), WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, 40 + secX, 195, 180, 30, hWnd, (HMENU)IDC_EDIT_PASSWORD);
-    SendMessage(g_hEditPassword, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    g_hEditPassword = CreateModernEdit(2, g_appPassword.c_str(), 40 + secX, 195, 180, 30, hWnd, IDC_EDIT_PASSWORD, false, false, false);
+
     CreateLabel(2, hWnd, L"(Hatalı girişte imha tetiklenir)", 40 + secX, 230, 220, 20, g_hFontSmall);
 
     CreateLabel(2, hWnd, L"Varsayılan Yedekleme Yolu:", 40, 310, 300, 25, g_hFontSubtitle);
-    g_hEditDefaultPath = CreateCtrl(2, L"EDIT", g_targetPath.c_str(), WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_READONLY | WS_BORDER, 40, 340, 450, 30, hWnd, (HMENU)IDC_EDIT_PATH);
-    SendMessage(g_hEditDefaultPath, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    // Note: IDC_EDIT_PATH is used twice, which might be an issue for lookup by ID, but they are separate controls.
+    // However, saving settings reads from g_hEditDefaultPath handle, so it's fine.
+    g_hEditDefaultPath = CreateModernEdit(2, g_targetPath.c_str(), 40, 340, 450, 30, hWnd, IDC_EDIT_PATH, false, true, false);
 
     HWND hBtnSave = CreateCtrl(2, L"BUTTON", L"💾  Ayarları Kaydet", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 40, 390, 180, 40, hWnd, (HMENU)IDB_SAVE_SETTINGS);
     SetModernStyle(hBtnSave);
@@ -1961,7 +2204,7 @@ void CreateUI(HWND hWnd)
 
     // TAB 3: SYSINFO
     CreateLabel(3, hWnd, L"Sistem Bilgisi", 40, 10, 300, 40, g_hFontTitle);
-    g_hInfoText = CreateCtrl(3, L"EDIT", L"Yükleniyor...", WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY | WS_BORDER, 40, 70, 800, 450, hWnd, NULL);
+    g_hInfoText = CreateModernEdit(3, L"Yükleniyor...", 40, 70, 800, 450, hWnd, 0, false, true, true);
     SendMessage(g_hInfoText, WM_SETFONT, (WPARAM)g_hFontMono, TRUE);
     
     // TAB 4: CUSTOMIZATION
@@ -1980,12 +2223,16 @@ void CreateUI(HWND hWnd)
     SendMessage(g_hComboProgressMode, CB_SETCURSEL, g_progressBarMode, 0);
     
     CreateLabel(4, hWnd, L"Özel yüzde değeri:", 40, 160, 150, 20, g_hFontNormal);
-    g_hEditProgressCustom = CreateCtrl(4, L"EDIT", std::to_wstring(g_customProgressValue).c_str(), WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER, 200, 157, 90, 25, hWnd, (HMENU)IDC_EDIT_PROGRESS_CUSTOM);
-    SendMessage(g_hEditProgressCustom, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    g_hEditProgressCustom = CreateModernEdit(4, std::to_wstring(g_customProgressValue).c_str(), 200, 157, 90, 25, hWnd, IDC_EDIT_PROGRESS_CUSTOM, false, false, false, true);
     EnableWindow(g_hEditProgressCustom, g_progressBarMode == 3);
     
     CreateLabel(4, hWnd, L"(Sadece Custom seçiliyken aktif)", 40, 190, 250, 20, g_hFontSmall);
     
+    // THEME TOGGLE
+    CreateLabel(4, hWnd, L"Görünüm:", 400, 70, 100, 25, g_hFontSubtitle);
+    HWND hBtnTheme = CreateCtrl(4, L"BUTTON", L"🌓 Tema Değiştir", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 400, 100, 150, 30, hWnd, (HMENU)IDB_THEME_TOGGLE);
+    SetModernStyle(hBtnTheme);
+
     // Tray Icon Selection Section
     CreateLabel(4, hWnd, L"Tepsi İkonu Seçimi", 40, 230, 300, 25, g_hFontSubtitle);
     CreateLabel(4, hWnd, L"Aktif ikon:", 40, 260, 150, 20, g_hFontNormal);
@@ -2378,6 +2625,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         SetTextColor(hdc, CLR_ACCENT);
         DrawTextW(hdc, L"🔗 GitHub", -1, &rcGitHub, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
 
+        // Draw Theme Toggle "Icon" next to GitHub (text-based for now)
+        // User asked for a selector next to github button.
+        // We will make "🌓" clickable in WM_LBUTTONDOWN.
+        RECT rcTheme = rcGitHub;
+        rcTheme.right -= 80; // Move left of GitHub
+        SetTextColor(hdc, CLR_TEXT_SECONDARY);
+        DrawTextW(hdc, L"🌓", -1, &rcTheme, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+
         EndPaint(hWnd, &ps);
         break;
     }
@@ -2387,7 +2642,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     {
         LPDRAWITEMSTRUCT pDIS = (LPDRAWITEMSTRUCT)lParam;
         // Nav buttons and special buttons
-        if (pDIS->CtlID >= 1000 && pDIS->CtlID <= 1010) {
+        if ((pDIS->CtlID >= 1000 && pDIS->CtlID <= 1010) || pDIS->CtlID == IDB_NAV_CUSTOMIZATION) {
             PaintNavButton(pDIS);
             return TRUE;
         }
@@ -2501,9 +2756,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             if (HIWORD(wParam) == CBN_SELCHANGE) {
                 int idx = SendMessage(g_hComboLonelithUrl, CB_GETCURSEL, 0, 0);
                 if (idx == 2) { // "Select another" option
-                    ShowWindow(g_hEditCustomUrl, SW_SHOW);
+                    // Show parent container of the modern edit
+                    HWND hParent = (HWND)GetWindowLongPtr(g_hEditCustomUrl, GWLP_USERDATA);
+                    if (hParent) ShowWindow(hParent, SW_SHOW);
+                    else ShowWindow(g_hEditCustomUrl, SW_SHOW);
                 } else {
-                    ShowWindow(g_hEditCustomUrl, SW_HIDE);
+                    // Hide parent container of the modern edit
+                    HWND hParent = (HWND)GetWindowLongPtr(g_hEditCustomUrl, GWLP_USERDATA);
+                    if (hParent) ShowWindow(hParent, SW_HIDE);
+                    else ShowWindow(g_hEditCustomUrl, SW_HIDE);
+
                     wchar_t urlBuf[256];
                     SendMessage(g_hComboLonelithUrl, CB_GETLBTEXT, idx, (LPARAM)urlBuf);
                     g_lonelithUrl = urlBuf;
@@ -2590,6 +2852,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             if (MessageBoxW(hWnd, L"⚠️ DİKKAT! Programı KALICI OLARAK silmek istiyor musunuz?", L"KENDİNİ İMHA ET", MB_YESNO | MB_ICONSTOP | MB_DEFBUTTON2) == IDYES) {
                 PerformSelfDestruct(false);
             }
+            break;
+
+        case IDB_THEME_TOGGLE:
+            ToggleTheme(hWnd);
             break;
 
             // Tepsi Menüsü Komutları
@@ -2685,6 +2951,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 // Open repository in browser
                 ShellExecuteW(NULL, L"open", L"https://github.com/prescionx/ShadowCopy", NULL, NULL, SW_SHOWNORMAL);
                 LogMessage(L"🔗 GitHub repository açıldı.");
+            }
+            // Check for Theme Toggle click (Next to GitHub)
+            else if (pt.x >= rcClient.right - 180 && pt.x < rcClient.right - 100) {
+                ToggleTheme(hWnd);
             }
         }
         break;
