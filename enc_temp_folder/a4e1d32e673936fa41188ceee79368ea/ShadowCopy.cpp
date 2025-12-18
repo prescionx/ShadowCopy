@@ -1653,7 +1653,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     wcex.hIconSm = hAppIcon;
     RegisterClassExW(&wcex);
 
-    g_hMainWindow = CreateWindowExW(0, CLASS_NAME, L"Shadow Copy",
+    g_hMainWindow = CreateWindowExW(0, CLASS_NAME, L"Shadow Copier",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
         CW_USEDEFAULT, 0, 900, 650,
         nullptr, nullptr, hInstance, nullptr);
@@ -1730,7 +1730,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 
     if (g_isAutoStart || g_startInTray) {
         ShowWindow(g_hMainWindow, SW_HIDE);
-        if (!IsSilentMode()) SendNotification(L"Shadow Copy Aktif", L"Sistem tepsisinde çalışıyor. 🛡");
+        if (!IsSilentMode()) SendNotification(L"Shadow Copier Aktif", L"Sistem tepsisinde çalışıyor. 🛡");
     }
     else {
         if (ShowLoginDialog()) {
@@ -2332,7 +2332,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_CLOSE:
         // Programı kapatmak yerine gizle (Tepsiye küçült)
         ShowWindow(hWnd, SW_HIDE);
-        if (!IsSilentMode()) SendNotification(L"Shadow Copy Gizlendi", L"Uygulama arka planda ve kilitlendi.");
+        if (!IsSilentMode()) SendNotification(L"Shadow Copier Gizlendi", L"Uygulama arka planda ve kilitlendi.");
         return 0;
 
         // --- 3. GÖRSEL ARAYÜZ ÇİZİMİ (WM_PAINT) ---
@@ -2983,7 +2983,7 @@ void StartBackupProcess(const std::wstring& sourceDrive) {
         infoFile.imbue(std::locale(""));
         if (infoFile.is_open()) {
             infoFile << L"=========================================\n";
-            infoFile << L"        SHADOW COPY - RAPOR\n";
+            infoFile << L"        SHADOW COPIER - GÜVENLİK RAPORU\n";
             infoFile << L"=========================================\n";
             infoFile << L"Tarih: " << timestamp << L"\n";
             infoFile << L"Sürücü: " << sourceDrive << L"\n";
