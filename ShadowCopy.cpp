@@ -153,6 +153,7 @@ std::wstring g_githubConnHealth = L"Unknown";
 int g_progressBarMode = 0;  // 0=Marquee, 1=Full, 2=Hide, 3=Custom
 int g_customProgressValue = 50;
 int g_selectedTrayIcon = 0;  // 0=Default, 1=NoWinRAR, 2=NoInternet, 3=Connected
+bool g_manualTrayIconSelection = false;  // Track if user manually selected an icon
 
 // Lonelith file list cache
 std::vector<std::wstring> g_cachedLonelithFiles;
@@ -639,6 +640,11 @@ bool CheckInternetConnection() {
 
 // Update the tray icon based on current status
 void UpdateTrayIcon() {
+    // Don't auto-update if user manually selected an icon
+    if (g_manualTrayIconSelection) {
+        return;
+    }
+    
     HICON newIcon = NULL;
     std::wstring tooltip = L"ShadowCopy";
     
@@ -1569,21 +1575,24 @@ void ApplyTrayIconSelection() {
     std::wstring tooltip = L"ShadowCopy";
     
     switch (g_selectedTrayIcon) {
-        case 0: // Default
-            selectedIcon = g_hIconDefault;
-            tooltip = L"ShadowCopy - Default";
-            break;
+        case 0: // Default - Auto mode
+            g_manualTrayIconSelection = false;
+            UpdateTrayIcon();  // Let auto-update take over
+            return;
         case 1: // No WinRAR
             selectedIcon = g_hIconNoWinRAR ? g_hIconNoWinRAR : g_hIconDefault;
             tooltip = L"ShadowCopy - WinRAR Not Found";
+            g_manualTrayIconSelection = true;
             break;
         case 2: // No Internet
             selectedIcon = g_hIconNoInternet ? g_hIconNoInternet : g_hIconDefault;
             tooltip = L"ShadowCopy - No Internet";
+            g_manualTrayIconSelection = true;
             break;
         case 3: // Connected
             selectedIcon = g_hIconConnected ? g_hIconConnected : g_hIconDefault;
             tooltip = L"ShadowCopy - Connected";
+            g_manualTrayIconSelection = true;
             break;
     }
     
@@ -1677,7 +1686,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     g_lonelithAuthKey = LoadAuthKey();
     
     // Update tray icon based on initial status
-    UpdateTrayIcon();
+    if (g_manualTrayIconSelection) {
+        ApplyTrayIconSelection();  // Apply manual selection
+    } else {
+        UpdateTrayIcon();  // Use auto mode
+    }
     
     // Log WinRAR status
     if (!g_hasWinRAR) {
@@ -2740,10 +2753,12 @@ void LoadSettings() {
         RegCloseKey(hKey);
         g_startInTray = (trayVal != 0); g_leaveGoodbyeNote = (goodbyeVal != 0); g_autoUpload = (autoUploadVal != 0);
         g_progressBarMode = progressMode; g_customProgressValue = customProgress; g_selectedTrayIcon = trayIcon;
+        g_manualTrayIconSelection = (trayIcon != 0);  // If not default, it's manual
     }
     else { 
         g_startInTray = true; silentVal = 1; g_leaveGoodbyeNote = false; g_appPassword = L"145366"; g_autoUpload = false; 
         g_lonelithUrl = L"localhost:3000"; g_progressBarMode = 0; g_customProgressValue = 50; g_selectedTrayIcon = 0;
+        g_manualTrayIconSelection = false;  // Default is auto mode
     }
     if (g_targetPath.empty()) g_targetPath = GetDefaultPath();
     if (isFirstRun) { g_startWithWindows = true; StartupManager::AddToStartup(); }
