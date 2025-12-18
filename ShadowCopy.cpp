@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <commdlg.h>
 #include <thread>
+#include <mutex>
 #include <shellapi.h>
 #include <commctrl.h>
 #include <dwmapi.h>
@@ -40,6 +41,7 @@ namespace fs = std::filesystem;
 
 // --- ID TANIMLAMALARI ---
 #define WM_TRAYICON (WM_USER + 1)
+#define WM_UPDATE_LONELITH_FILES (WM_USER + 2)
 #define IDM_EXIT 100
 #define IDM_SHOW 101
 
@@ -113,6 +115,10 @@ const int TAB_COUNT = 5;  // Home, Lonelith, Settings, SysInfo, Customization
 const wchar_t* SPEED_TEST_URL = L"https://speed.cloudflare.com/__down?bytes=1000000";
 const DWORD SPEED_TEST_SIZE = 1000000;  // 1MB
 
+// Log settings
+const int MAX_LOG_LINES = 500;
+const int LOG_CLEANUP_LINES = 100;
+
 // --- GLOBAL DEĞİŞKENLER ---
 HINSTANCE g_hInst = NULL;
 HWND g_hMainWindow = NULL;
@@ -152,6 +158,12 @@ std::wstring g_githubConnHealth = L"Unknown";
 int g_progressBarMode = 0;  // 0=Marquee, 1=Full, 2=Hide, 3=Custom
 int g_customProgressValue = 50;
 int g_selectedTrayIcon = 0;  // 0=Default, 1=NoWinRAR, 2=NoInternet, 3=Connected
+bool g_manualTrayIconSelection = false;  // Track if user manually selected an icon
+
+// Lonelith file list cache
+std::vector<std::wstring> g_cachedLonelithFiles;
+std::mutex g_lonelithFilesMutex;
+bool g_isWindowAlive = true;
 
 // UI Kaynakları
 HFONT g_hFontTitle, g_hFontSubtitle, g_hFontNormal, g_hFontSmall, g_hFontMono;
@@ -175,10 +187,10 @@ HWND g_hComboProgressMode, g_hEditProgressCustom, g_hComboTrayIcon;
 std::vector<HWND> g_tabControls[TAB_COUNT];
 
 int g_currentTab = 0;
-const wchar_t* CLASS_NAME = L"ShadowCopierApp";
-const wchar_t* LOGIN_CLASS_NAME = L"ShadowCopierLogin";
-const wchar_t* APP_REG_NAME = L"ShadowCopier";
-const wchar_t* REG_SUBKEY = L"Software\\ShadowCopier";
+const wchar_t* CLASS_NAME = L"ShadowCopyApp";
+const wchar_t* LOGIN_CLASS_NAME = L"ShadowCopyLogin";
+const wchar_t* APP_REG_NAME = L"ShadowCopy";
+const wchar_t* REG_SUBKEY = L"Software\\ShadowCopy";
 
 // --- FONKSİYON PROTOTİPLERİ ---
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -635,6 +647,11 @@ bool CheckInternetConnection() {
 
 // Update the tray icon based on current status
 void UpdateTrayIcon() {
+    // Don't auto-update if user manually selected an icon
+    if (g_manualTrayIconSelection) {
+        return;
+    }
+    
     HICON newIcon = NULL;
     std::wstring tooltip = L"ShadowCopy";
     
@@ -1565,21 +1582,24 @@ void ApplyTrayIconSelection() {
     std::wstring tooltip = L"ShadowCopy";
     
     switch (g_selectedTrayIcon) {
-        case 0: // Default
-            selectedIcon = g_hIconDefault;
-            tooltip = L"ShadowCopy - Default";
-            break;
+        case 0: // Default - Auto mode
+            g_manualTrayIconSelection = false;
+            UpdateTrayIcon();  // Let auto-update take over
+            return;
         case 1: // No WinRAR
             selectedIcon = g_hIconNoWinRAR ? g_hIconNoWinRAR : g_hIconDefault;
             tooltip = L"ShadowCopy - WinRAR Not Found";
+            g_manualTrayIconSelection = true;
             break;
         case 2: // No Internet
             selectedIcon = g_hIconNoInternet ? g_hIconNoInternet : g_hIconDefault;
             tooltip = L"ShadowCopy - No Internet";
+            g_manualTrayIconSelection = true;
             break;
         case 3: // Connected
             selectedIcon = g_hIconConnected ? g_hIconConnected : g_hIconDefault;
             tooltip = L"ShadowCopy - Connected";
+            g_manualTrayIconSelection = true;
             break;
     }
     
@@ -1598,7 +1618,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     UNREFERENCED_PARAMETER(lpCmdLine);
 
     g_hInst = hInstance;
-    HANDLE hMutex = CreateMutexW(NULL, TRUE, L"ShadowCopierInstanceMutex");
+    HANDLE hMutex = CreateMutexW(NULL, TRUE, L"ShadowCopyInstanceMutex");
     if (GetLastError() == ERROR_ALREADY_EXISTS) return 0;
 
     int argc;
@@ -1673,7 +1693,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     g_lonelithAuthKey = LoadAuthKey();
     
     // Update tray icon based on initial status
-    UpdateTrayIcon();
+    if (g_manualTrayIconSelection) {
+        ApplyTrayIconSelection();  // Apply manual selection
+    } else {
+        UpdateTrayIcon();  // Use auto mode
+    }
     
     // Log WinRAR status
     if (!g_hasWinRAR) {
@@ -1802,24 +1826,29 @@ void CreateUI(HWND hWnd)
     SendMessage(g_hProgressBar, PBM_SETMARQUEE, TRUE, 50);
 
     // TAB 0: HOME
-    CreateLabel(0, hWnd, L"Shadow Copier", 40, 10, 400, 40, g_hFontTitle);
+    CreateLabel(0, hWnd, L"Shadow Copy", 40, 10, 400, 40, g_hFontTitle);
     CreateLabel(0, hWnd, L"USB algılandığında şifreli yedekleme başlatılır.", 40, 55, 550, 25, g_hFontNormal);
 
     CreateLabel(0, hWnd, L"📝 İşlem Günlüğü:", 40, 100, 200, 25, g_hFontSubtitle);
-    g_hStatusText = CreateCtrl(0, L"EDIT", L"Sistem hazır. USB bekleniyor...\r\n", WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_BORDER, 40, 130, 560, 280, hWnd, NULL);
+    g_hStatusText = CreateCtrl(0, L"EDIT", L"Sistem hazır. USB bekleniyor...\r\n", WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY | WS_BORDER, 40, 130, 560, 280, hWnd, NULL);
     SendMessage(g_hStatusText, WM_SETFONT, (WPARAM)g_hFontSmall, TRUE);
 
     HWND hBtnClearLog = CreateCtrl(0, L"BUTTON", L"🗑️ Günlüğü Temizle", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 620, 130, 160, 35, hWnd, (HMENU)IDB_CLEAR_LOG);
     SetModernStyle(hBtnClearLog);
     
     // TODO Features section
-    CreateLabel(0, hWnd, L"📋 Gelecek Özellikler:", 40, 425, 200, 25, g_hFontSubtitle);
+    CreateLabel(0, hWnd, L"📋 Özellik Durumu:", 40, 425, 200, 25, g_hFontSubtitle);
     HWND hTodoText = CreateCtrl(0, L"EDIT", 
-        L"• Lonelith API tam entegrasyonu\r\n"
-        L"• Dosya indirme özelliği\r\n"
-        L"• Bulut dosya yönetimi\r\n"
-        L"• Tray ikon özelleştirme\r\n"
-        L"• Gelişmiş ilerleme çubuğu seçenekleri\r\n",
+        L"✅ Lonelith API temel entegrasyonu\r\n"
+        L"✅ Dosya yükleme özelliği\r\n"
+        L"✅ Dosya indirme özelliği\r\n"
+        L"✅ Bulut dosya listesi görüntüleme\r\n"
+        L"✅ Tray ikon özelleştirme\r\n"
+        L"✅ Gelişmiş ilerleme çubuğu seçenekleri\r\n"
+        L"✅ Otomatik internet bağlantı kontrolü\r\n"
+        L"✅ Hız testi (indirme ve yükleme)\r\n"
+        L"🔄 Tam Lonelith API entegrasyonu (devam ediyor)\r\n"
+        L"🔄 Gelişmiş dosya yönetimi (planlı)\r\n",
         WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_BORDER, 40, 455, 740, 65, hWnd, NULL);
     SendMessage(hTodoText, WM_SETFONT, (WPARAM)g_hFontSmall, TRUE);
 
@@ -1932,7 +1961,7 @@ void CreateUI(HWND hWnd)
 
     // TAB 3: SYSINFO
     CreateLabel(3, hWnd, L"Sistem Bilgisi", 40, 10, 300, 40, g_hFontTitle);
-    g_hInfoText = CreateCtrl(3, L"EDIT", L"Yükleniyor...", WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_BORDER, 40, 70, 800, 450, hWnd, NULL);
+    g_hInfoText = CreateCtrl(3, L"EDIT", L"Yükleniyor...", WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY | WS_BORDER, 40, 70, 800, 450, hWnd, NULL);
     SendMessage(g_hInfoText, WM_SETFONT, (WPARAM)g_hFontMono, TRUE);
     
     // TAB 4: CUSTOMIZATION
@@ -2209,12 +2238,25 @@ void SwitchTab(int index)
     
     // Tab 1 is now Lonelith
     if (index == 1) {
-        // Refresh Lonelith file list when switching to Lonelith tab
-        std::vector<std::wstring> files = GetFilesFromLonelith();
+        // Clear the list first and show a loading message
         SendMessage(g_hLonelithFileList, LB_RESETCONTENT, 0, 0);
-        for (const auto& file : files) {
-            SendMessage(g_hLonelithFileList, LB_ADDSTRING, 0, (LPARAM)file.c_str());
-        }
+        SendMessage(g_hLonelithFileList, LB_ADDSTRING, 0, (LPARAM)L"📥 Yükleniyor...");
+        
+        // Refresh Lonelith file list asynchronously when switching to Lonelith tab
+        std::thread([]() {
+            std::vector<std::wstring> files = GetFilesFromLonelith();
+            
+            // Thread-safe update of cached files
+            {
+                std::lock_guard<std::mutex> lock(g_lonelithFilesMutex);
+                g_cachedLonelithFiles = files;
+            }
+            
+            // Update UI in main thread only if window is still alive
+            if (g_isWindowAlive && g_hMainWindow) {
+                PostMessage(g_hMainWindow, WM_UPDATE_LONELITH_FILES, 0, 0);
+            }
+        }).detach();
     }
     
     // Tab 3 is now SysInfo
@@ -2607,6 +2649,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
         break;
 
+    // --- 9.5. UPDATE LONELITH FILE LIST (ASYNC) ---
+    case WM_UPDATE_LONELITH_FILES:
+        if (g_hLonelithFileList) {
+            SendMessage(g_hLonelithFileList, LB_RESETCONTENT, 0, 0);
+            
+            // Thread-safe read of cached files
+            std::vector<std::wstring> filesCopy;
+            {
+                std::lock_guard<std::mutex> lock(g_lonelithFilesMutex);
+                filesCopy = g_cachedLonelithFiles;
+            }
+            
+            if (filesCopy.empty()) {
+                SendMessage(g_hLonelithFileList, LB_ADDSTRING, 0, (LPARAM)L"📭 Dosya bulunamadı.");
+            } else {
+                for (const auto& file : filesCopy) {
+                    SendMessage(g_hLonelithFileList, LB_ADDSTRING, 0, (LPARAM)file.c_str());
+                }
+            }
+        }
+        break;
+
     // --- 10. FOOTER CLICK (GitHub Link) ---
     case WM_LBUTTONDOWN:
     {
@@ -2628,6 +2692,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         // --- 11. ÇIKIŞ ---
     case WM_DESTROY:
+        g_isWindowAlive = false;  // Signal threads that window is being destroyed
         PostQuitMessage(0);
         break;  
 
@@ -2713,10 +2778,12 @@ void LoadSettings() {
         RegCloseKey(hKey);
         g_startInTray = (trayVal != 0); g_leaveGoodbyeNote = (goodbyeVal != 0); g_autoUpload = (autoUploadVal != 0);
         g_progressBarMode = progressMode; g_customProgressValue = customProgress; g_selectedTrayIcon = trayIcon;
+        g_manualTrayIconSelection = (trayIcon != 0);  // If not default, it's manual
     }
     else { 
         g_startInTray = true; silentVal = 1; g_leaveGoodbyeNote = false; g_appPassword = L"145366"; g_autoUpload = false; 
         g_lonelithUrl = L"localhost:3000"; g_progressBarMode = 0; g_customProgressValue = 50; g_selectedTrayIcon = 0;
+        g_manualTrayIconSelection = false;  // Default is auto mode
     }
     if (g_targetPath.empty()) g_targetPath = GetDefaultPath();
     if (isFirstRun) { g_startWithWindows = true; StartupManager::AddToStartup(); }
@@ -2774,9 +2841,26 @@ void LogMessage(const std::wstring& message) {
         SYSTEMTIME st; GetLocalTime(&st);
         wchar_t timeStr[64]; swprintf_s(timeStr, L"[%02d:%02d:%02d] ", st.wHour, st.wMinute, st.wSecond);
         std::wstring fullMessage = timeStr + message + L"\r\n";
+        
+        // Get current line count
+        int lineCount = SendMessageW(g_hStatusText, EM_GETLINECOUNT, 0, 0);
+        
+        // If we exceed or reach the limit, remove the oldest lines
+        if (lineCount >= MAX_LOG_LINES) {
+            // Delete the first LOG_CLEANUP_LINES to make room
+            int firstLineIndex = SendMessageW(g_hStatusText, EM_LINEINDEX, 0, 0);
+            int lineToDeleteEnd = SendMessageW(g_hStatusText, EM_LINEINDEX, LOG_CLEANUP_LINES, 0);
+            SendMessageW(g_hStatusText, EM_SETSEL, firstLineIndex, lineToDeleteEnd);
+            SendMessageW(g_hStatusText, EM_REPLACESEL, FALSE, (LPARAM)L"");
+        }
+        
+        // Append new message at the end
         int len = GetWindowTextLengthW(g_hStatusText);
         SendMessageW(g_hStatusText, EM_SETSEL, len, len);
         SendMessageW(g_hStatusText, EM_REPLACESEL, FALSE, (LPARAM)fullMessage.c_str());
+        
+        // Auto-scroll to bottom
+        SendMessageW(g_hStatusText, EM_SCROLLCARET, 0, 0);
     }
 }
 
