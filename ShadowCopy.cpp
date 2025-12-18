@@ -20,6 +20,9 @@
 #include <wininet.h>
 #include <wincrypt.h>
 #include <dpapi.h>
+#include <windowsx.h> 
+#include <knownfolders.h> 
+
 
 // Automatic linking of required libraries (for MSVC)
 #pragma comment(lib, "comctl32.lib")
@@ -1105,9 +1108,16 @@ bool ShowFileOnLonelith(const std::wstring& fileId) {
     wchar_t downloadsPath[MAX_PATH];
     // Use CSIDL_DOWNLOADS for Downloads folder (Vista+)
     // Falls back to Documents if Downloads folder is not available
-    HRESULT hr = SHGetFolderPathW(NULL, CSIDL_DOWNLOADS, NULL, 0, downloadsPath);
-    if (FAILED(hr)) {
-        // Fallback to Documents folder for older Windows versions
+    PWSTR pszPath = NULL;
+    // Modern API (Vista+) ile İndirilenler klasörünü bulmaya çalış
+    HRESULT hr = SHGetKnownFolderPath(FOLDERID_Downloads, 0, NULL, &pszPath);
+
+    if (SUCCEEDED(hr)) {
+        wcscpy_s(downloadsPath, MAX_PATH, pszPath);
+        CoTaskMemFree(pszPath); // Hafızayı temizle
+    }
+    else {
+        // Eğer İndirilenler bulunamazsa Belgelerim klasörüne dön
         hr = SHGetFolderPathW(NULL, CSIDL_PERSONAL, NULL, 0, downloadsPath);
     }
     
