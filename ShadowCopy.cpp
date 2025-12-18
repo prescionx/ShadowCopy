@@ -1810,7 +1810,7 @@ void CreateUI(HWND hWnd)
     CreateLabel(0, hWnd, L"USB algılandığında şifreli yedekleme başlatılır.", 40, 55, 550, 25, g_hFontNormal);
 
     CreateLabel(0, hWnd, L"📝 İşlem Günlüğü:", 40, 100, 200, 25, g_hFontSubtitle);
-    g_hStatusText = CreateCtrl(0, L"EDIT", L"Sistem hazır. USB bekleniyor...\r\n", WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_BORDER, 40, 130, 560, 280, hWnd, NULL);
+    g_hStatusText = CreateCtrl(0, L"EDIT", L"Sistem hazır. USB bekleniyor...\r\n", WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY | WS_BORDER, 40, 130, 560, 280, hWnd, NULL);
     SendMessage(g_hStatusText, WM_SETFONT, (WPARAM)g_hFontSmall, TRUE);
 
     HWND hBtnClearLog = CreateCtrl(0, L"BUTTON", L"🗑️ Günlüğü Temizle", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 620, 130, 160, 35, hWnd, (HMENU)IDB_CLEAR_LOG);
@@ -1941,7 +1941,7 @@ void CreateUI(HWND hWnd)
 
     // TAB 3: SYSINFO
     CreateLabel(3, hWnd, L"Sistem Bilgisi", 40, 10, 300, 40, g_hFontTitle);
-    g_hInfoText = CreateCtrl(3, L"EDIT", L"Yükleniyor...", WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_BORDER, 40, 70, 800, 450, hWnd, NULL);
+    g_hInfoText = CreateCtrl(3, L"EDIT", L"Yükleniyor...", WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY | WS_BORDER, 40, 70, 800, 450, hWnd, NULL);
     SendMessage(g_hInfoText, WM_SETFONT, (WPARAM)g_hFontMono, TRUE);
     
     // TAB 4: CUSTOMIZATION
