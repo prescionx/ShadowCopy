@@ -193,6 +193,7 @@ bool g_isWindowAlive = true;
 
 // Global brush for edit controls (theme-aware)
 HBRUSH g_hBrushEdit = NULL;
+bool g_brushesAreStock = false;  // Track if fallback stock brushes are used
 
 // UI Kaynakları
 HFONT g_hFontTitle, g_hFontSubtitle, g_hFontNormal, g_hFontSmall, g_hFontMono;
@@ -1803,9 +1804,32 @@ void InitResources()
     g_hFontSmall = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI Variable Text");
     g_hFontMono = CreateFontW(15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Cascadia Code");
 
+    // CreateFontW should never return NULL, but provide fallback to system font just in case
+    if (!g_hFontTitle) g_hFontTitle = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+    if (!g_hFontSubtitle) g_hFontSubtitle = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+    if (!g_hFontNormal) g_hFontNormal = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+    if (!g_hFontSmall) g_hFontSmall = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+    if (!g_hFontMono) g_hFontMono = (HFONT)GetStockObject(ANSI_FIXED_FONT);
+
     g_hBrushMainBg = CreateSolidBrush(CLR_BG_MAIN);
     g_hBrushSidebar = CreateSolidBrush(CLR_BG_SIDEBAR);
     g_hBrushEdit = CreateSolidBrush(CLR_INPUT_BG);
+    
+    // Check if brush creation failed
+    if (!g_hBrushMainBg || !g_hBrushSidebar || !g_hBrushEdit) {
+        // Clean up any that succeeded
+        if (g_hBrushMainBg) DeleteObject(g_hBrushMainBg);
+        if (g_hBrushSidebar) DeleteObject(g_hBrushSidebar);
+        if (g_hBrushEdit) DeleteObject(g_hBrushEdit);
+        
+        // Use stock objects
+        g_hBrushMainBg = (HBRUSH)GetStockObject(LTGRAY_BRUSH);
+        g_hBrushSidebar = (HBRUSH)GetStockObject(GRAY_BRUSH);
+        g_hBrushEdit = (HBRUSH)GetStockObject(WHITE_BRUSH);
+        g_brushesAreStock = true;
+    } else {
+        g_brushesAreStock = false;
+    }
     
     // Load status icons
     g_hIconNoWinRAR = LoadIcon(g_hInst, MAKEINTRESOURCE(IDI_TRAY_NO_WINRAR));
@@ -1821,10 +1845,22 @@ void InitResources()
 
 void CleanupResources()
 {
-    DeleteObject(g_hFontTitle); DeleteObject(g_hFontSubtitle);
-    DeleteObject(g_hFontNormal); DeleteObject(g_hFontSmall); DeleteObject(g_hFontMono);
-    DeleteObject(g_hBrushMainBg); DeleteObject(g_hBrushSidebar);
-    if (g_hBrushEdit) DeleteObject(g_hBrushEdit);
+    // Only delete fonts if they're not stock objects
+    HFONT hDefaultFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+    HFONT hFixedFont = (HFONT)GetStockObject(ANSI_FIXED_FONT);
+    
+    if (g_hFontTitle && g_hFontTitle != hDefaultFont) DeleteObject(g_hFontTitle);
+    if (g_hFontSubtitle && g_hFontSubtitle != hDefaultFont) DeleteObject(g_hFontSubtitle);
+    if (g_hFontNormal && g_hFontNormal != hDefaultFont) DeleteObject(g_hFontNormal);
+    if (g_hFontSmall && g_hFontSmall != hDefaultFont) DeleteObject(g_hFontSmall);
+    if (g_hFontMono && g_hFontMono != hFixedFont && g_hFontMono != hDefaultFont) DeleteObject(g_hFontMono);
+    
+    // Only delete brushes if they're not stock objects
+    if (!g_brushesAreStock) {
+        if (g_hBrushMainBg) DeleteObject(g_hBrushMainBg);
+        if (g_hBrushSidebar) DeleteObject(g_hBrushSidebar);
+        if (g_hBrushEdit) DeleteObject(g_hBrushEdit);
+    }
     
     // Clean up icons
     if (g_hIconNoWinRAR && g_hIconNoWinRAR != g_hIconDefault) DestroyIcon(g_hIconNoWinRAR);
@@ -3194,19 +3230,28 @@ void ApplyTheme() {
         CLR_INPUT_BG = CLR_LIGHT_INPUT_BG;
     }
     
-    // Recreate brushes with new colors
-    if (g_hBrushMainBg) DeleteObject(g_hBrushMainBg);
-    if (g_hBrushSidebar) DeleteObject(g_hBrushSidebar);
-    if (g_hBrushEdit) DeleteObject(g_hBrushEdit);
-    
-    g_hBrushMainBg = CreateSolidBrush(CLR_BG_MAIN);
-    g_hBrushSidebar = CreateSolidBrush(CLR_BG_SIDEBAR);
-    g_hBrushEdit = CreateSolidBrush(CLR_INPUT_BG);
-    
-    // If brush creation fails, create a safe default
-    if (!g_hBrushMainBg) g_hBrushMainBg = (HBRUSH)GetStockObject(LTGRAY_BRUSH);
-    if (!g_hBrushSidebar) g_hBrushSidebar = (HBRUSH)GetStockObject(GRAY_BRUSH);
-    if (!g_hBrushEdit) g_hBrushEdit = (HBRUSH)GetStockObject(WHITE_BRUSH);
+    // Only recreate brushes if they're not stock objects
+    if (!g_brushesAreStock) {
+        if (g_hBrushMainBg) DeleteObject(g_hBrushMainBg);
+        if (g_hBrushSidebar) DeleteObject(g_hBrushSidebar);
+        if (g_hBrushEdit) DeleteObject(g_hBrushEdit);
+        
+        g_hBrushMainBg = CreateSolidBrush(CLR_BG_MAIN);
+        g_hBrushSidebar = CreateSolidBrush(CLR_BG_SIDEBAR);
+        g_hBrushEdit = CreateSolidBrush(CLR_INPUT_BG);
+        
+        // If recreation fails, fall back to stock objects
+        if (!g_hBrushMainBg || !g_hBrushSidebar || !g_hBrushEdit) {
+            if (g_hBrushMainBg) DeleteObject(g_hBrushMainBg);
+            if (g_hBrushSidebar) DeleteObject(g_hBrushSidebar);
+            if (g_hBrushEdit) DeleteObject(g_hBrushEdit);
+            
+            g_hBrushMainBg = (HBRUSH)GetStockObject(LTGRAY_BRUSH);
+            g_hBrushSidebar = (HBRUSH)GetStockObject(GRAY_BRUSH);
+            g_hBrushEdit = (HBRUSH)GetStockObject(WHITE_BRUSH);
+            g_brushesAreStock = true;
+        }
+    }
     
     // Update theme toggle button text
     if (g_hThemeToggleBtn) {
