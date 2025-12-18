@@ -51,6 +51,7 @@ namespace fs = std::filesystem;
 #define IDB_NAV_SETTINGS 1002
 #define IDB_NAV_INFO 1003
 #define IDB_NAV_LONELITH 1004
+#define IDB_NAV_CUSTOMIZATION 1013
 
 // New Lonelith controls
 #define IDB_LONELITH_UPLOAD 1005
@@ -63,6 +64,12 @@ namespace fs = std::filesystem;
 
 // Progress bar
 #define IDC_PROGRESS_BAR 1012
+
+// Customization controls
+#define IDC_COMBO_PROGRESS_MODE 1014
+#define IDC_EDIT_PROGRESS_CUSTOM 1015
+#define IDC_COMBO_TRAY_ICON 1016
+#define IDB_APPLY_TRAY_ICON 1017
 
 // Kontroller
 #define IDB_SELECT_FOLDER 200
@@ -97,7 +104,7 @@ const COLORREF CLR_SUCCESS = RGB(25, 135, 84);
 const int NAVBAR_HEIGHT = 60;
 const int FOOTER_HEIGHT = 30;
 const int PROGRESS_BAR_HEIGHT = 4;
-const int TAB_COUNT = 4;
+const int TAB_COUNT = 5;  // Home, Lonelith, Settings, SysInfo, Customization
 
 // Network test constants
 const wchar_t* SPEED_TEST_URL = L"https://speed.cloudflare.com/__down?bytes=1000000";
@@ -134,15 +141,21 @@ int g_progressValue = 0;
 bool g_isMarquee = true;
 bool g_autoUpload = false;
 std::wstring g_currentSpeed = L"";
+std::wstring g_currentUploadSpeed = L"";
 std::wstring g_lonelithServerHealth = L"Unknown";
 std::wstring g_githubConnHealth = L"Unknown";
+
+// Customization globals
+int g_progressBarMode = 0;  // 0=Marquee, 1=Full, 2=Hide, 3=Custom
+int g_customProgressValue = 50;
+int g_selectedTrayIcon = 0;  // 0=Default, 1=NoWinRAR, 2=NoInternet, 3=Connected
 
 // UI Kaynakları
 HFONT g_hFontTitle, g_hFontSubtitle, g_hFontNormal, g_hFontSmall, g_hFontMono;
 HBRUSH g_hBrushMainBg, g_hBrushSidebar;
 
 // Global Kontrol Handle'ları
-HWND g_hNavBtnHome, g_hNavBtnSettings, g_hNavBtnInfo, g_hNavBtnLonelith;
+HWND g_hNavBtnHome, g_hNavBtnSettings, g_hNavBtnInfo, g_hNavBtnLonelith, g_hNavBtnCustomization;
 HWND g_hPathDisplay, g_hStatusText;
 HWND g_hCheckStartup, g_hCheckSilent, g_hEditDefaultPath, g_hCheckStartTray, g_hCheckGoodbye;
 HWND g_hEditPassword;
@@ -150,10 +163,11 @@ HWND g_hInfoText;
 HWND g_hProgressBar;
 HWND g_hEditAuthKey, g_hCheckAutoUpload;
 HWND g_hLonelithFileList;
-HWND g_hSpeedTestResult;
+HWND g_hSpeedTestResult, g_hUploadSpeedTestResult;
 HWND g_hComboLonelithUrl;
 HWND g_hEditCustomUrl;
 HWND g_hGitHubTestResult;
+HWND g_hComboProgressMode, g_hEditProgressCustom, g_hComboTrayIcon;
 
 std::vector<HWND> g_tabControls[TAB_COUNT];
 
@@ -206,6 +220,7 @@ bool UploadFileToLonelith(const std::wstring& filePath);
 std::vector<std::wstring> GetFilesFromLonelith();
 bool ShowFileOnLonelith(const std::wstring& fileId);
 void TestInternetSpeed();
+void TestUploadSpeed();
 void CheckGitHubConnection();
 void CheckLonelithHealth();
 void UpdateProgressBar(int value, bool marquee);
@@ -214,6 +229,8 @@ void SetupPageTransition(int fromTab, int toTab);
 void ClearLog();
 void TestGitHubConnectionManual();
 void CheckLonelithUrlHealth(const std::wstring& url);
+void ApplyProgressBarMode();
+void ApplyTrayIconSelection();
 
 // Yardımcı: UI Oluşturma
 HWND CreateCtrl(int tabIndex, LPCWSTR lpClassName, LPCWSTR lpWindowName, DWORD dwStyle, int x, int y, int nWidth, int nHeight, HWND hParent, HMENU hMenu) {
@@ -737,8 +754,8 @@ std::wstring LoadAuthKey() {
     return L"";
 }
 
-// Upload file to Lonelith server (placeholder implementation)
-// Note: The Lonelith repository is not accessible, so this is a basic HTTP upload template
+// Upload file to Lonelith server using HTTP POST with multipart/form-data
+// Based on: curl -X POST http://localhost:3000/upload -H "X-API-Key: your-secret-api-key-here" -F "file=@/path/to/your/file.txt"
 bool UploadFileToLonelith(const std::wstring& filePath) {
     if (!g_hasInternet) {
         LogMessage(L"⚠️ İnternet bağlantısı yok, dosya yüklenemedi.");
@@ -755,22 +772,133 @@ bool UploadFileToLonelith(const std::wstring& filePath) {
         return false;
     }
     
-    // TODO: Implement actual Lonelith API upload
-    // This is a placeholder implementation
-    // Based on typical C# client example pattern:
-    // 1. Read file content
-    // 2. Create HTTP POST request with auth header
-    // 3. Upload file with multipart/form-data
-    // 4. Handle response
+    LogMessage(L"📤 Lonelith'e yükleme başlatılıyor: " + filePath);
     
-    LogMessage(L"ℹ️ Lonelith yükleme özelliği - API detayları için repo erişimi gerekli.");
-    LogMessage(L"   Dosya: " + filePath);
+    // Parse URL to extract server and port
+    std::wstring serverUrl = g_lonelithUrl;
+    std::wstring serverHost;
+    INTERNET_PORT serverPort = INTERNET_DEFAULT_HTTP_PORT;
     
-    // Placeholder for actual implementation
-    return false;
+    // Extract host and port from URL (e.g., "localhost:3000" or "lonelith.556.space")
+    size_t colonPos = serverUrl.find(L':');
+    if (colonPos != std::wstring::npos) {
+        serverHost = serverUrl.substr(0, colonPos);
+        serverPort = (INTERNET_PORT)_wtoi(serverUrl.substr(colonPos + 1).c_str());
+    } else {
+        serverHost = serverUrl;
+    }
+    
+    HINTERNET hInternet = InternetOpenW(L"ShadowCopy/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hInternet) {
+        LogMessage(L"❌ Internet session oluşturulamadı.");
+        return false;
+    }
+    
+    HINTERNET hConnect = InternetConnectW(hInternet, serverHost.c_str(), serverPort, 
+        NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    
+    if (!hConnect) {
+        LogMessage(L"❌ Server'a bağlanılamadı: " + serverHost);
+        InternetCloseHandle(hInternet);
+        return false;
+    }
+    
+    HINTERNET hRequest = HttpOpenRequestW(hConnect, L"POST", L"/upload", NULL, NULL, NULL, 
+        INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
+    
+    if (!hRequest) {
+        LogMessage(L"❌ HTTP request oluşturulamadı.");
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        return false;
+    }
+    
+    // Read file content
+    std::ifstream file(filePath, std::ios::binary);
+    if (!file.is_open()) {
+        LogMessage(L"❌ Dosya okunamadı.");
+        InternetCloseHandle(hRequest);
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        return false;
+    }
+    
+    file.seekg(0, std::ios::end);
+    size_t fileSize = file.tellg();
+    file.seekg(0, std::ios::beg);
+    
+    std::vector<char> fileContent(fileSize);
+    file.read(fileContent.data(), fileSize);
+    file.close();
+    
+    // Extract filename from path
+    std::wstring fileName = fs::path(filePath).filename().wstring();
+    
+    // Create multipart/form-data boundary
+    std::string boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
+    
+    // Build multipart body
+    std::stringstream bodyStream;
+    bodyStream << "--" << boundary << "\r\n";
+    bodyStream << "Content-Disposition: form-data; name=\"file\"; filename=\"";
+    
+    // Convert filename to UTF-8
+    int utf8Size = WideCharToMultiByte(CP_UTF8, 0, fileName.c_str(), -1, NULL, 0, NULL, NULL);
+    std::vector<char> utf8FileName(utf8Size);
+    WideCharToMultiByte(CP_UTF8, 0, fileName.c_str(), -1, utf8FileName.data(), utf8Size, NULL, NULL);
+    
+    bodyStream << utf8FileName.data() << "\"\r\n";
+    bodyStream << "Content-Type: application/octet-stream\r\n\r\n";
+    
+    std::string bodyPrefix = bodyStream.str();
+    std::string bodySuffix = "\r\n--" + boundary + "--\r\n";
+    
+    // Combine all parts
+    std::vector<char> fullBody;
+    fullBody.insert(fullBody.end(), bodyPrefix.begin(), bodyPrefix.end());
+    fullBody.insert(fullBody.end(), fileContent.begin(), fileContent.end());
+    fullBody.insert(fullBody.end(), bodySuffix.begin(), bodySuffix.end());
+    
+    // Prepare headers
+    std::wstring authHeader = L"X-API-Key: " + g_lonelithAuthKey;
+    std::wstring contentTypeHeader = L"Content-Type: multipart/form-data; boundary=" + 
+        std::wstring(boundary.begin(), boundary.end());
+    
+    std::wstring allHeaders = authHeader + L"\r\n" + contentTypeHeader;
+    
+    // Send the request
+    BOOL result = HttpSendRequestW(hRequest, allHeaders.c_str(), allHeaders.length(), 
+        fullBody.data(), (DWORD)fullBody.size());
+    
+    if (!result) {
+        LogMessage(L"❌ Dosya gönderilemedi.");
+        InternetCloseHandle(hRequest);
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        return false;
+    }
+    
+    // Check response status
+    DWORD statusCode = 0;
+    DWORD statusCodeSize = sizeof(statusCode);
+    HttpQueryInfoW(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, 
+        &statusCode, &statusCodeSize, NULL);
+    
+    InternetCloseHandle(hRequest);
+    InternetCloseHandle(hConnect);
+    InternetCloseHandle(hInternet);
+    
+    if (statusCode == 200 || statusCode == 201) {
+        LogMessage(L"✅ Dosya başarıyla yüklendi!");
+        return true;
+    } else {
+        LogMessage(L"⚠️ Server yanıtı: HTTP " + std::to_wstring(statusCode));
+        return false;
+    }
 }
 
 // Get list of files from Lonelith server
+// Based on: curl -X GET http://localhost:3000/files -H "X-API-Key: your-secret-api-key-here"
 std::vector<std::wstring> GetFilesFromLonelith() {
     std::vector<std::wstring> files;
     
@@ -784,14 +912,113 @@ std::vector<std::wstring> GetFilesFromLonelith() {
         return files;
     }
     
-    // TODO: Implement actual GET request to Lonelith
-    // Placeholder: Would make GET request to /files endpoint
-    LogMessage(L"ℹ️ Lonelith dosya listesi - API detayları için repo erişimi gerekli.");
+    LogMessage(L"📋 Lonelith dosya listesi alınıyor...");
+    
+    // Parse URL
+    std::wstring serverUrl = g_lonelithUrl;
+    std::wstring serverHost;
+    INTERNET_PORT serverPort = INTERNET_DEFAULT_HTTP_PORT;
+    
+    size_t colonPos = serverUrl.find(L':');
+    if (colonPos != std::wstring::npos) {
+        serverHost = serverUrl.substr(0, colonPos);
+        serverPort = (INTERNET_PORT)_wtoi(serverUrl.substr(colonPos + 1).c_str());
+    } else {
+        serverHost = serverUrl;
+    }
+    
+    HINTERNET hInternet = InternetOpenW(L"ShadowCopy/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hInternet) {
+        LogMessage(L"❌ Internet session oluşturulamadı.");
+        return files;
+    }
+    
+    HINTERNET hConnect = InternetConnectW(hInternet, serverHost.c_str(), serverPort, 
+        NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    
+    if (!hConnect) {
+        LogMessage(L"❌ Server'a bağlanılamadı.");
+        InternetCloseHandle(hInternet);
+        return files;
+    }
+    
+    HINTERNET hRequest = HttpOpenRequestW(hConnect, L"GET", L"/files", NULL, NULL, NULL, 
+        INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
+    
+    if (!hRequest) {
+        LogMessage(L"❌ HTTP request oluşturulamadı.");
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        return files;
+    }
+    
+    // Add auth header
+    std::wstring authHeader = L"X-API-Key: " + g_lonelithAuthKey;
+    HttpAddRequestHeadersW(hRequest, authHeader.c_str(), authHeader.length(), 
+        HTTP_ADDREQ_FLAG_ADD | HTTP_ADDREQ_FLAG_REPLACE);
+    
+    // Send request
+    if (!HttpSendRequestW(hRequest, NULL, 0, NULL, 0)) {
+        LogMessage(L"❌ Request gönderilemedi.");
+        InternetCloseHandle(hRequest);
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        return files;
+    }
+    
+    // Read response
+    char buffer[4096];
+    DWORD bytesRead = 0;
+    std::string response;
+    
+    while (InternetReadFile(hRequest, buffer, sizeof(buffer) - 1, &bytesRead) && bytesRead > 0) {
+        buffer[bytesRead] = 0;
+        response += buffer;
+    }
+    
+    InternetCloseHandle(hRequest);
+    InternetCloseHandle(hConnect);
+    InternetCloseHandle(hInternet);
+    
+    // Parse JSON response (simple parsing - assumes array of filename strings)
+    // For a full implementation, use a JSON library
+    // For now, we'll do simple string parsing
+    if (!response.empty()) {
+        // Convert response to wide string
+        int wideSize = MultiByteToWideChar(CP_UTF8, 0, response.c_str(), -1, NULL, 0);
+        std::vector<wchar_t> wideResponse(wideSize);
+        MultiByteToWideChar(CP_UTF8, 0, response.c_str(), -1, wideResponse.data(), wideSize);
+        
+        LogMessage(L"✅ Dosya listesi alındı.");
+        LogMessage(L"Yanıt: " + std::wstring(wideResponse.data()));
+        
+        // Simple parsing: look for quoted strings (filenames)
+        // Note: This is basic parsing and may not handle all JSON edge cases
+        // For production, consider using a JSON library
+        std::wstring responseStr(wideResponse.data());
+        size_t pos = 0;
+        while ((pos = responseStr.find(L'"', pos)) != std::wstring::npos) {
+            size_t endPos = responseStr.find(L'"', pos + 1);
+            if (endPos != std::wstring::npos) {
+                std::wstring filename = responseStr.substr(pos + 1, endPos - pos - 1);
+                // Accept any non-empty filename (not just those with dots)
+                if (!filename.empty() && filename.length() > 0 && 
+                    filename.find(L'{') == std::wstring::npos && 
+                    filename.find(L'}') == std::wstring::npos) {
+                    files.push_back(filename);
+                }
+                pos = endPos + 1;
+            } else {
+                break;
+            }
+        }
+    }
     
     return files;
 }
 
-// Show/open file from Lonelith server
+// Download file from Lonelith server
+// Based on: curl -X GET http://localhost:3000/download/1234567890-file.txt -H "X-API-Key: your-secret-api-key-here" -o downloaded-file.txt
 bool ShowFileOnLonelith(const std::wstring& fileId) {
     if (!g_hasInternet) {
         LogMessage(L"⚠️ İnternet bağlantısı yok.");
@@ -803,8 +1030,126 @@ bool ShowFileOnLonelith(const std::wstring& fileId) {
         return false;
     }
     
-    // TODO: Implement actual show/display file functionality
-    LogMessage(L"ℹ️ Lonelith dosya görüntüleme - API detayları için repo erişimi gerekli.");
+    LogMessage(L"📥 Lonelith'ten dosya indiriliyor: " + fileId);
+    
+    // Parse URL
+    std::wstring serverUrl = g_lonelithUrl;
+    std::wstring serverHost;
+    INTERNET_PORT serverPort = INTERNET_DEFAULT_HTTP_PORT;
+    
+    size_t colonPos = serverUrl.find(L':');
+    if (colonPos != std::wstring::npos) {
+        serverHost = serverUrl.substr(0, colonPos);
+        serverPort = (INTERNET_PORT)_wtoi(serverUrl.substr(colonPos + 1).c_str());
+    } else {
+        serverHost = serverUrl;
+    }
+    
+    HINTERNET hInternet = InternetOpenW(L"ShadowCopy/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hInternet) {
+        LogMessage(L"❌ Internet session oluşturulamadı.");
+        return false;
+    }
+    
+    HINTERNET hConnect = InternetConnectW(hInternet, serverHost.c_str(), serverPort, 
+        NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    
+    if (!hConnect) {
+        LogMessage(L"❌ Server'a bağlanılamadı.");
+        InternetCloseHandle(hInternet);
+        return false;
+    }
+    
+    // Build download path
+    std::wstring downloadPath = L"/download/" + fileId;
+    
+    HINTERNET hRequest = HttpOpenRequestW(hConnect, L"GET", downloadPath.c_str(), NULL, NULL, NULL, 
+        INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
+    
+    if (!hRequest) {
+        LogMessage(L"❌ HTTP request oluşturulamadı.");
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        return false;
+    }
+    
+    // Add auth header
+    std::wstring authHeader = L"X-API-Key: " + g_lonelithAuthKey;
+    HttpAddRequestHeadersW(hRequest, authHeader.c_str(), authHeader.length(), 
+        HTTP_ADDREQ_FLAG_ADD | HTTP_ADDREQ_FLAG_REPLACE);
+    
+    // Send request
+    if (!HttpSendRequestW(hRequest, NULL, 0, NULL, 0)) {
+        LogMessage(L"❌ Request gönderilemedi.");
+        InternetCloseHandle(hRequest);
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        return false;
+    }
+    
+    // Check status code
+    DWORD statusCode = 0;
+    DWORD statusCodeSize = sizeof(statusCode);
+    HttpQueryInfoW(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, 
+        &statusCode, &statusCodeSize, NULL);
+    
+    if (statusCode != 200) {
+        LogMessage(L"⚠️ Dosya bulunamadı veya erişim hatası. HTTP " + std::to_wstring(statusCode));
+        InternetCloseHandle(hRequest);
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        return false;
+    }
+    
+    // Save to downloads folder
+    wchar_t downloadsPath[MAX_PATH];
+    // Use CSIDL_DOWNLOADS for Downloads folder (Vista+)
+    // Falls back to Documents if Downloads folder is not available
+    HRESULT hr = SHGetFolderPathW(NULL, CSIDL_DOWNLOADS, NULL, 0, downloadsPath);
+    if (FAILED(hr)) {
+        // Fallback to Documents folder for older Windows versions
+        hr = SHGetFolderPathW(NULL, CSIDL_PERSONAL, NULL, 0, downloadsPath);
+    }
+    
+    if (SUCCEEDED(hr)) {
+        std::wstring savePath = std::wstring(downloadsPath) + L"\\" + fileId;
+        
+        // Read and save file
+        std::ofstream outFile(savePath, std::ios::binary);
+        if (!outFile.is_open()) {
+            LogMessage(L"❌ Dosya kaydedilemedi.");
+            InternetCloseHandle(hRequest);
+            InternetCloseHandle(hConnect);
+            InternetCloseHandle(hInternet);
+            return false;
+        }
+        
+        char buffer[8192];
+        DWORD bytesRead = 0;
+        DWORD totalBytes = 0;
+        
+        while (InternetReadFile(hRequest, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
+            outFile.write(buffer, bytesRead);
+            totalBytes += bytesRead;
+        }
+        
+        outFile.close();
+        
+        InternetCloseHandle(hRequest);
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        
+        LogMessage(L"✅ Dosya indirildi: " + savePath + L" (" + FormatBytes(totalBytes) + L")");
+        
+        // Open the downloaded file
+        ShellExecuteW(NULL, L"open", savePath.c_str(), NULL, NULL, SW_SHOWNORMAL);
+        
+        return true;
+    }
+    
+    InternetCloseHandle(hRequest);
+    InternetCloseHandle(hConnect);
+    InternetCloseHandle(hInternet);
     
     return false;
 }
@@ -848,7 +1193,7 @@ void TestInternetSpeed() {
                 swprintf_s(speedBuf, L"%.2f Mbps", speedMbps);
                 g_currentSpeed = speedBuf;
                 
-                LogMessage(L"✅ İnternet hızı: " + g_currentSpeed);
+                LogMessage(L"✅ İndirme hızı: " + g_currentSpeed);
                 if (g_hSpeedTestResult) {
                     SetWindowTextW(g_hSpeedTestResult, g_currentSpeed.c_str());
                 }
@@ -863,7 +1208,72 @@ void TestInternetSpeed() {
         InternetCloseHandle(hInternet);
     }
     
+    // Now test upload speed
+    TestUploadSpeed();
+    
     UpdateProgressBar(0, true);  // Return to marquee
+}
+
+// Test upload speed
+void TestUploadSpeed() {
+    if (!g_hasInternet) {
+        g_currentUploadSpeed = L"İnternet bağlantısı yok";
+        LogMessage(L"⚠️ İnternet bağlantısı yok, yükleme hız testi yapılamıyor.");
+        return;
+    }
+    
+    LogMessage(L"🚀 Yükleme hız testi başlatılıyor...");
+    
+    // Note: Using httpbin.org for testing (a common HTTP testing service)
+    // If this service is unavailable, the test will fail gracefully
+    // Consider making this configurable for production use
+    
+    HINTERNET hInternet = InternetOpenW(L"ShadowCopy", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (hInternet) {
+        // Use httpbin.org for testing
+        HINTERNET hConnect = InternetConnectW(hInternet, L"httpbin.org", INTERNET_DEFAULT_HTTP_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+        
+        if (hConnect) {
+            HINTERNET hRequest = HttpOpenRequestW(hConnect, L"POST", L"/post", NULL, NULL, NULL, INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
+            
+            if (hRequest) {
+                // Create test data (100KB)
+                const DWORD testDataSize = 100000;
+                std::vector<BYTE> testData(testDataSize, 'A');
+                
+                DWORD startTime = GetTickCount();
+                
+                // Send the request
+                if (HttpSendRequestW(hRequest, NULL, 0, testData.data(), testDataSize)) {
+                    DWORD elapsedMs = GetTickCount() - startTime;
+                    
+                    if (elapsedMs > 0) {
+                        double speedMbps = (testDataSize * 8.0 / 1000000.0) / (elapsedMs / 1000.0);
+                        wchar_t speedBuf[128];
+                        swprintf_s(speedBuf, L"%.2f Mbps", speedMbps);
+                        g_currentUploadSpeed = speedBuf;
+                        
+                        LogMessage(L"✅ Yükleme hızı: " + g_currentUploadSpeed);
+                        if (g_hUploadSpeedTestResult) {
+                            SetWindowTextW(g_hUploadSpeedTestResult, g_currentUploadSpeed.c_str());
+                        }
+                    }
+                }
+                else {
+                    g_currentUploadSpeed = L"Test başarısız";
+                    LogMessage(L"⚠️ Yükleme hız testi başarısız oldu.");
+                }
+                
+                InternetCloseHandle(hRequest);
+            }
+            InternetCloseHandle(hConnect);
+        }
+        InternetCloseHandle(hInternet);
+    }
+    else {
+        g_currentUploadSpeed = L"Bağlantı hatası";
+        LogMessage(L"⚠️ Upload speed test connection error.");
+    }
 }
 
 // Check GitHub connection.txt file
@@ -1073,6 +1483,104 @@ void CheckLonelithUrlHealth(const std::wstring& url) {
     }
 }
 
+// Apply progress bar mode based on selection
+void ApplyProgressBarMode() {
+    if (!g_hProgressBar) return;
+    
+    switch (g_progressBarMode) {
+        case 0: // Marquee
+            ShowWindow(g_hProgressBar, SW_SHOW);
+            SetWindowLongPtr(g_hProgressBar, GWL_STYLE, 
+                GetWindowLongPtr(g_hProgressBar, GWL_STYLE) | PBS_MARQUEE);
+            SendMessage(g_hProgressBar, PBM_SETMARQUEE, TRUE, 50);
+            LogMessage(L"✅ İlerleme çubuğu modu: Marquee");
+            break;
+            
+        case 1: // Full
+            ShowWindow(g_hProgressBar, SW_SHOW);
+            SetWindowLongPtr(g_hProgressBar, GWL_STYLE, 
+                GetWindowLongPtr(g_hProgressBar, GWL_STYLE) & ~PBS_MARQUEE);
+            SendMessage(g_hProgressBar, PBM_SETMARQUEE, FALSE, 0);
+            SendMessage(g_hProgressBar, PBM_SETPOS, 100, 0);
+            LogMessage(L"✅ İlerleme çubuğu modu: Full (100%)");
+            break;
+            
+        case 2: // Hide
+            ShowWindow(g_hProgressBar, SW_HIDE);
+            LogMessage(L"✅ İlerleme çubuğu gizlendi");
+            break;
+            
+        case 3: // Custom percentage
+            {
+                ShowWindow(g_hProgressBar, SW_SHOW);
+                SetWindowLongPtr(g_hProgressBar, GWL_STYLE, 
+                    GetWindowLongPtr(g_hProgressBar, GWL_STYLE) & ~PBS_MARQUEE);
+                SendMessage(g_hProgressBar, PBM_SETMARQUEE, FALSE, 0);
+                
+                // Get custom value from edit box with validation
+                wchar_t buf[16];
+                GetWindowTextW(g_hEditProgressCustom, buf, 16);
+                
+                // Validate that it's a number
+                bool isValid = true;
+                for (int i = 0; buf[i] != L'\0'; i++) {
+                    if (!iswdigit(buf[i])) {
+                        isValid = false;
+                        break;
+                    }
+                }
+                
+                int customValue = 50; // Default if invalid
+                if (isValid && buf[0] != L'\0') {
+                    customValue = _wtoi(buf);
+                    if (customValue < 0) customValue = 0;
+                    if (customValue > 100) customValue = 100;
+                } else {
+                    // Invalid input, set to default and update UI
+                    SetWindowTextW(g_hEditProgressCustom, L"50");
+                }
+                
+                g_customProgressValue = customValue;
+                
+                SendMessage(g_hProgressBar, PBM_SETPOS, customValue, 0);
+                LogMessage(L"✅ İlerleme çubuğu modu: Custom %" + std::to_wstring(customValue));
+            }
+            break;
+    }
+}
+
+// Apply tray icon selection
+void ApplyTrayIconSelection() {
+    HICON selectedIcon = NULL;
+    std::wstring tooltip = L"ShadowCopy";
+    
+    switch (g_selectedTrayIcon) {
+        case 0: // Default
+            selectedIcon = g_hIconDefault;
+            tooltip = L"ShadowCopy - Default";
+            break;
+        case 1: // No WinRAR
+            selectedIcon = g_hIconNoWinRAR ? g_hIconNoWinRAR : g_hIconDefault;
+            tooltip = L"ShadowCopy - WinRAR Not Found";
+            break;
+        case 2: // No Internet
+            selectedIcon = g_hIconNoInternet ? g_hIconNoInternet : g_hIconDefault;
+            tooltip = L"ShadowCopy - No Internet";
+            break;
+        case 3: // Connected
+            selectedIcon = g_hIconConnected ? g_hIconConnected : g_hIconDefault;
+            tooltip = L"ShadowCopy - Connected";
+            break;
+    }
+    
+    if (selectedIcon) {
+        g_nid.hIcon = selectedIcon;
+        wcscpy_s(g_nid.szTip, tooltip.c_str());
+        Shell_NotifyIcon(NIM_MODIFY, &g_nid);
+        LogMessage(L"✅ Tray icon değiştirildi: " + tooltip);
+    }
+}
+
 // --- MAIN ---
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow)
 {
@@ -1261,8 +1769,8 @@ void SetModernStyle(HWND hControl) {
 // --- UI OLUŞTURMA ---
 void CreateUI(HWND hWnd)
 {
-    // Create top navigation bar (horizontal) - New order: Home, Lonelith, Settings, SysInfo
-    int btnW = 180; int btnH = 40; int btnX = 20;
+    // Create top navigation bar (horizontal) - New order: Home, Lonelith, Settings, SysInfo, Customization
+    int btnW = 140; int btnH = 40; int btnX = 20;
     g_hNavBtnHome = CreateWindowW(L"BUTTON", L"🏠 Ana Sayfa", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, btnX, 10, btnW, btnH, hWnd, (HMENU)IDB_NAV_HOME, g_hInst, NULL);
     btnX += btnW + 10;
     g_hNavBtnLonelith = CreateWindowW(L"BUTTON", L"☁️ Lonelith", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, btnX, 10, btnW, btnH, hWnd, (HMENU)IDB_NAV_LONELITH, g_hInst, NULL);
@@ -1270,6 +1778,8 @@ void CreateUI(HWND hWnd)
     g_hNavBtnSettings = CreateWindowW(L"BUTTON", L"⚙ Ayarlar", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, btnX, 10, btnW, btnH, hWnd, (HMENU)IDB_NAV_SETTINGS, g_hInst, NULL);
     btnX += btnW + 10;
     g_hNavBtnInfo = CreateWindowW(L"BUTTON", L"ℹ️ Sistem Bilgisi", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, btnX, 10, btnW, btnH, hWnd, (HMENU)IDB_NAV_INFO, g_hInst, NULL);
+    btnX += btnW + 10;
+    g_hNavBtnCustomization = CreateWindowW(L"BUTTON", L"🎨 Özelleştirme", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, btnX, 10, btnW, btnH, hWnd, (HMENU)IDB_NAV_CUSTOMIZATION, g_hInst, NULL);
 
     // Create progress bar in footer
     RECT clientRect;
@@ -1286,11 +1796,22 @@ void CreateUI(HWND hWnd)
     CreateLabel(0, hWnd, L"USB algılandığında şifreli yedekleme başlatılır.", 40, 55, 550, 25, g_hFontNormal);
 
     CreateLabel(0, hWnd, L"📝 İşlem Günlüğü:", 40, 100, 200, 25, g_hFontSubtitle);
-    g_hStatusText = CreateCtrl(0, L"EDIT", L"Sistem hazır. USB bekleniyor...\r\n", WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_BORDER, 40, 130, 560, 390, hWnd, NULL);
+    g_hStatusText = CreateCtrl(0, L"EDIT", L"Sistem hazır. USB bekleniyor...\r\n", WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_BORDER, 40, 130, 560, 280, hWnd, NULL);
     SendMessage(g_hStatusText, WM_SETFONT, (WPARAM)g_hFontSmall, TRUE);
 
     HWND hBtnClearLog = CreateCtrl(0, L"BUTTON", L"🗑️ Günlüğü Temizle", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 620, 130, 160, 35, hWnd, (HMENU)IDB_CLEAR_LOG);
     SetModernStyle(hBtnClearLog);
+    
+    // TODO Features section
+    CreateLabel(0, hWnd, L"📋 Gelecek Özellikler:", 40, 425, 200, 25, g_hFontSubtitle);
+    HWND hTodoText = CreateCtrl(0, L"EDIT", 
+        L"• Lonelith API tam entegrasyonu\r\n"
+        L"• Dosya indirme özelliği\r\n"
+        L"• Bulut dosya yönetimi\r\n"
+        L"• Tray ikon özelleştirme\r\n"
+        L"• Gelişmiş ilerleme çubuğu seçenekleri\r\n",
+        WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_BORDER, 40, 455, 740, 65, hWnd, NULL);
+    SendMessage(hTodoText, WM_SETFONT, (WPARAM)g_hFontSmall, TRUE);
 
     // TAB 1: LONELITH
     CreateLabel(1, hWnd, L"Lonelith Bulut Yönetimi", 40, 10, 400, 40, g_hFontTitle);
@@ -1331,21 +1852,25 @@ void CreateUI(HWND hWnd)
     HWND hLonelithStatus = CreateCtrl(1, L"STATIC", g_lonelithServerHealth.c_str(), WS_CHILD | WS_VISIBLE, 150, 315, 300, 20, hWnd, NULL);
     SendMessage(hLonelithStatus, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
     
-    CreateLabel(1, hWnd, L"İnternet Hızı:", 40, 340, 100, 20, g_hFontNormal);
+    CreateLabel(1, hWnd, L"İndirme Hızı:", 40, 340, 100, 20, g_hFontNormal);
     g_hSpeedTestResult = CreateCtrl(1, L"STATIC", g_currentSpeed.c_str(), WS_CHILD | WS_VISIBLE, 150, 340, 200, 20, hWnd, NULL);
     SendMessage(g_hSpeedTestResult, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
     
-    HWND hBtnSpeedTest = CreateCtrl(1, L"BUTTON", L"🚀 Hız Testi Yap", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 360, 337, 140, 25, hWnd, (HMENU)IDB_SPEED_TEST);
+    CreateLabel(1, hWnd, L"Yükleme Hızı:", 40, 365, 100, 20, g_hFontNormal);
+    g_hUploadSpeedTestResult = CreateCtrl(1, L"STATIC", g_currentUploadSpeed.c_str(), WS_CHILD | WS_VISIBLE, 150, 365, 200, 20, hWnd, NULL);
+    SendMessage(g_hUploadSpeedTestResult, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    
+    HWND hBtnSpeedTest = CreateCtrl(1, L"BUTTON", L"🚀 Hız Testi Yap", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 360, 347, 140, 25, hWnd, (HMENU)IDB_SPEED_TEST);
     SetModernStyle(hBtnSpeedTest);
     
-    CreateLabel(1, hWnd, L"Yüklü Dosyalar:", 40, 380, 200, 25, g_hFontSubtitle);
-    g_hLonelithFileList = CreateCtrl(1, L"LISTBOX", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | LBS_NOTIFY, 40, 410, 500, 110, hWnd, (HMENU)IDC_LONELITH_FILE_LIST);
+    CreateLabel(1, hWnd, L"Yüklü Dosyalar:", 40, 400, 200, 25, g_hFontSubtitle);
+    g_hLonelithFileList = CreateCtrl(1, L"LISTBOX", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | LBS_NOTIFY, 40, 430, 500, 90, hWnd, (HMENU)IDC_LONELITH_FILE_LIST);
     SendMessage(g_hLonelithFileList, WM_SETFONT, (WPARAM)g_hFontSmall, TRUE);
     
-    HWND hBtnRefresh = CreateCtrl(1, L"BUTTON", L"🔄 Yenile", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 550, 410, 100, 30, hWnd, (HMENU)IDB_LONELITH_REFRESH);
+    HWND hBtnRefresh = CreateCtrl(1, L"BUTTON", L"🔄 Yenile", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 550, 430, 100, 30, hWnd, (HMENU)IDB_LONELITH_REFRESH);
     SetModernStyle(hBtnRefresh);
     
-    HWND hBtnUpload = CreateCtrl(1, L"BUTTON", L"⬆️ Manuel Yükle", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 550, 450, 120, 30, hWnd, (HMENU)IDB_LONELITH_UPLOAD);
+    HWND hBtnUpload = CreateCtrl(1, L"BUTTON", L"⬆️ Manuel Yükle", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 550, 470, 120, 30, hWnd, (HMENU)IDB_LONELITH_UPLOAD);
     SetModernStyle(hBtnUpload);
 
     // TAB 2: SETTINGS
@@ -1397,9 +1922,49 @@ void CreateUI(HWND hWnd)
 
     // TAB 3: SYSINFO
     CreateLabel(3, hWnd, L"Sistem Bilgisi", 40, 10, 300, 40, g_hFontTitle);
-    g_hInfoText = CreateCtrl(3, L"STATIC", L"Yükleniyor...", WS_CHILD | WS_VISIBLE, 40, 70, 800, 450, hWnd, NULL);
+    g_hInfoText = CreateCtrl(3, L"EDIT", L"Yükleniyor...", WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_BORDER, 40, 70, 800, 450, hWnd, NULL);
     SendMessage(g_hInfoText, WM_SETFONT, (WPARAM)g_hFontMono, TRUE);
+    
+    // TAB 4: CUSTOMIZATION
+    CreateLabel(4, hWnd, L"Özelleştirme", 40, 10, 300, 40, g_hFontTitle);
+    
+    // Progress Bar Behavior Section
+    CreateLabel(4, hWnd, L"İlerleme Çubuğu Davranışı", 40, 70, 300, 25, g_hFontSubtitle);
+    CreateLabel(4, hWnd, L"Boşta kalma durumu:", 40, 100, 150, 20, g_hFontNormal);
+    
+    g_hComboProgressMode = CreateCtrl(4, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 40, 125, 250, 200, hWnd, (HMENU)IDC_COMBO_PROGRESS_MODE);
+    SendMessage(g_hComboProgressMode, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    SendMessage(g_hComboProgressMode, CB_ADDSTRING, 0, (LPARAM)L"Marquee (Animasyonlu)");
+    SendMessage(g_hComboProgressMode, CB_ADDSTRING, 0, (LPARAM)L"Full (100%)");
+    SendMessage(g_hComboProgressMode, CB_ADDSTRING, 0, (LPARAM)L"Hide (Gizli)");
+    SendMessage(g_hComboProgressMode, CB_ADDSTRING, 0, (LPARAM)L"Custom (Özel Yüzde)");
+    SendMessage(g_hComboProgressMode, CB_SETCURSEL, g_progressBarMode, 0);
+    
+    CreateLabel(4, hWnd, L"Özel yüzde değeri:", 40, 160, 150, 20, g_hFontNormal);
+    g_hEditProgressCustom = CreateCtrl(4, L"EDIT", std::to_wstring(g_customProgressValue).c_str(), WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER, 200, 157, 90, 25, hWnd, (HMENU)IDC_EDIT_PROGRESS_CUSTOM);
+    SendMessage(g_hEditProgressCustom, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    EnableWindow(g_hEditProgressCustom, g_progressBarMode == 3);
+    
+    CreateLabel(4, hWnd, L"(Sadece Custom seçiliyken aktif)", 40, 190, 250, 20, g_hFontSmall);
+    
+    // Tray Icon Selection Section
+    CreateLabel(4, hWnd, L"Tepsi İkonu Seçimi", 40, 230, 300, 25, g_hFontSubtitle);
+    CreateLabel(4, hWnd, L"Aktif ikon:", 40, 260, 150, 20, g_hFontNormal);
+    
+    g_hComboTrayIcon = CreateCtrl(4, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 40, 285, 250, 200, hWnd, (HMENU)IDC_COMBO_TRAY_ICON);
+    SendMessage(g_hComboTrayIcon, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    SendMessage(g_hComboTrayIcon, CB_ADDSTRING, 0, (LPARAM)L"Varsayılan");
+    SendMessage(g_hComboTrayIcon, CB_ADDSTRING, 0, (LPARAM)L"WinRAR Bulunamadı (❌)");
+    SendMessage(g_hComboTrayIcon, CB_ADDSTRING, 0, (LPARAM)L"İnternet Yok (⚠️)");
+    SendMessage(g_hComboTrayIcon, CB_ADDSTRING, 0, (LPARAM)L"Bağlantılı (✅)");
+    SendMessage(g_hComboTrayIcon, CB_SETCURSEL, g_selectedTrayIcon, 0);
+    
+    HWND hBtnApplyTrayIcon = CreateCtrl(4, L"BUTTON", L"🎨 Uygula", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 300, 285, 100, 30, hWnd, (HMENU)IDB_APPLY_TRAY_ICON);
+    SetModernStyle(hBtnApplyTrayIcon);
+    
+    CreateLabel(4, hWnd, L"Not: Tray ikonları otomatik olarak sistem durumuna göre değişir.\nBu ayar manuel seçim yapmak içindir.", 40, 330, 600, 40, g_hFontSmall);
 }
+
 
 // ... YARDIMCI FONKSİYONLAR ...
 bool IsSilentMode() {
@@ -1647,10 +2212,19 @@ void SwitchTab(int index)
         SetWindowTextW(g_hInfoText, GetSystemInfo().c_str());
     }
     
+    // Tab 4 is Customization - load current settings
+    if (index == 4) {
+        SendMessage(g_hComboProgressMode, CB_SETCURSEL, g_progressBarMode, 0);
+        SendMessage(g_hComboTrayIcon, CB_SETCURSEL, g_selectedTrayIcon, 0);
+        SetWindowTextW(g_hEditProgressCustom, std::to_wstring(g_customProgressValue).c_str());
+        EnableWindow(g_hEditProgressCustom, g_progressBarMode == 3);
+    }
+    
     InvalidateRect(g_hNavBtnHome, NULL, FALSE);
     InvalidateRect(g_hNavBtnLonelith, NULL, FALSE);
     InvalidateRect(g_hNavBtnSettings, NULL, FALSE);
     InvalidateRect(g_hNavBtnInfo, NULL, FALSE);
+    InvalidateRect(g_hNavBtnCustomization, NULL, FALSE);
     RECT rc = { 0, NAVBAR_HEIGHT, 900, 650 };
     InvalidateRect(g_hMainWindow, &rc, TRUE);
 }
@@ -1784,11 +2358,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_COMMAND:
         switch (LOWORD(wParam))
         {
-            // Navigasyon - New tab order: Home, Lonelith, Settings, SysInfo
+            // Navigasyon - New tab order: Home, Lonelith, Settings, SysInfo, Customization
         case IDB_NAV_HOME: SwitchTab(0); break;
         case IDB_NAV_LONELITH: SwitchTab(1); break;
         case IDB_NAV_SETTINGS: SwitchTab(2); break;
         case IDB_NAV_INFO: SwitchTab(3); break;
+        case IDB_NAV_CUSTOMIZATION: SwitchTab(4); break;
 
             // İşlevler
         case IDB_SELECT_FOLDER:
@@ -1913,6 +2488,49 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 MessageBoxW(hWnd, L"Ayarlar başarıyla kaydedildi! ✅", L"Bilgi", MB_OK | MB_ICONINFORMATION);
             }
             break;
+        
+        // Customization tab controls
+        case IDC_COMBO_PROGRESS_MODE:
+        {
+            if (HIWORD(wParam) == CBN_SELCHANGE) {
+                int idx = SendMessage(g_hComboProgressMode, CB_GETCURSEL, 0, 0);
+                g_progressBarMode = idx;
+                
+                // Enable/disable custom value edit based on selection
+                EnableWindow(g_hEditProgressCustom, idx == 3);
+                
+                ApplyProgressBarMode();
+            }
+        }
+        break;
+        
+        case IDB_APPLY_TRAY_ICON:
+        {
+            int idx = SendMessage(g_hComboTrayIcon, CB_GETCURSEL, 0, 0);
+            g_selectedTrayIcon = idx;
+            ApplyTrayIconSelection();
+        }
+        break;
+        
+        case IDC_LONELITH_FILE_LIST:
+        {
+            // Handle double-click on file list
+            if (HIWORD(wParam) == LBN_DBLCLK) {
+                int idx = SendMessage(g_hLonelithFileList, LB_GETCURSEL, 0, 0);
+                if (idx != LB_ERR) {
+                    wchar_t fileName[512];
+                    SendMessage(g_hLonelithFileList, LB_GETTEXT, idx, (LPARAM)fileName);
+                    
+                    LogMessage(L"📥 Dosya indirme başlatılıyor: " + std::wstring(fileName));
+                    
+                    // Download file in separate thread
+                    std::thread([fileName]() {
+                        ShowFileOnLonelith(fileName);
+                    }).detach();
+                }
+            }
+        }
+        break;
 
         case IDB_RESET_APP: ResetApp(hWnd); break;
 
@@ -2022,6 +2640,12 @@ void SaveSettings() {
     DWORD autoUploadVal = g_autoUpload ? 1 : 0;
     wchar_t path[MAX_PATH]; GetWindowTextW(g_hEditDefaultPath, path, MAX_PATH); g_targetPath = path;
     wchar_t passBuf[128]; GetWindowTextW(g_hEditPassword, passBuf, 128); g_appPassword = passBuf;
+    
+    // Customization settings
+    DWORD progressMode = g_progressBarMode;
+    DWORD customProgress = g_customProgressValue;
+    DWORD trayIcon = g_selectedTrayIcon;
+    
     HKEY hKey;
     if (RegCreateKeyExW(HKEY_CURRENT_USER, REG_SUBKEY, 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
         DWORD pathSize = static_cast<DWORD>((g_targetPath.length() + 1) * sizeof(wchar_t));
@@ -2034,6 +2658,12 @@ void SaveSettings() {
         RegSetValueExW(hKey, L"AutoUpload", 0, REG_DWORD, (BYTE*)&autoUploadVal, sizeof(autoUploadVal));
         DWORD urlSize = static_cast<DWORD>((g_lonelithUrl.length() + 1) * sizeof(wchar_t));
         RegSetValueExW(hKey, L"LonelithUrl", 0, REG_SZ, (BYTE*)g_lonelithUrl.c_str(), urlSize);
+        
+        // Save customization settings
+        RegSetValueExW(hKey, L"ProgressBarMode", 0, REG_DWORD, (BYTE*)&progressMode, sizeof(progressMode));
+        RegSetValueExW(hKey, L"CustomProgressValue", 0, REG_DWORD, (BYTE*)&customProgress, sizeof(customProgress));
+        RegSetValueExW(hKey, L"TrayIconSelection", 0, REG_DWORD, (BYTE*)&trayIcon, sizeof(trayIcon));
+        
         RegCloseKey(hKey);
     }
     SetWindowTextW(g_hPathDisplay, g_targetPath.c_str());
@@ -2043,6 +2673,7 @@ void SaveSettings() {
 void LoadSettings() {
     HKEY hKey;
     DWORD silentVal = 1; DWORD trayVal = 1; DWORD goodbyeVal = 0; DWORD autoUploadVal = 0; DWORD size = sizeof(DWORD);
+    DWORD progressMode = 0; DWORD customProgress = 50; DWORD trayIcon = 0;
     bool isFirstRun = true;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, REG_SUBKEY, 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
         isFirstRun = false;
@@ -2060,10 +2691,23 @@ void LoadSettings() {
         wchar_t urlBuf[256]; DWORD urlSize = sizeof(urlBuf);
         if (RegQueryValueExW(hKey, L"LonelithUrl", NULL, NULL, (BYTE*)urlBuf, &urlSize) == ERROR_SUCCESS) g_lonelithUrl = urlBuf;
         else g_lonelithUrl = L"localhost:3000";
+        
+        // Load customization settings
+        DWORD sizeProgress = sizeof(DWORD);
+        if (RegQueryValueExW(hKey, L"ProgressBarMode", NULL, NULL, (BYTE*)&progressMode, &sizeProgress) != ERROR_SUCCESS) progressMode = 0;
+        DWORD sizeCustom = sizeof(DWORD);
+        if (RegQueryValueExW(hKey, L"CustomProgressValue", NULL, NULL, (BYTE*)&customProgress, &sizeCustom) != ERROR_SUCCESS) customProgress = 50;
+        DWORD sizeTrayIcon = sizeof(DWORD);
+        if (RegQueryValueExW(hKey, L"TrayIconSelection", NULL, NULL, (BYTE*)&trayIcon, &sizeTrayIcon) != ERROR_SUCCESS) trayIcon = 0;
+        
         RegCloseKey(hKey);
         g_startInTray = (trayVal != 0); g_leaveGoodbyeNote = (goodbyeVal != 0); g_autoUpload = (autoUploadVal != 0);
+        g_progressBarMode = progressMode; g_customProgressValue = customProgress; g_selectedTrayIcon = trayIcon;
     }
-    else { g_startInTray = true; silentVal = 1; g_leaveGoodbyeNote = false; g_appPassword = L"145366"; g_autoUpload = false; g_lonelithUrl = L"localhost:3000"; }
+    else { 
+        g_startInTray = true; silentVal = 1; g_leaveGoodbyeNote = false; g_appPassword = L"145366"; g_autoUpload = false; 
+        g_lonelithUrl = L"localhost:3000"; g_progressBarMode = 0; g_customProgressValue = 50; g_selectedTrayIcon = 0;
+    }
     if (g_targetPath.empty()) g_targetPath = GetDefaultPath();
     if (isFirstRun) { g_startWithWindows = true; StartupManager::AddToStartup(); }
     else { g_startWithWindows = StartupManager::IsInStartup(); }
@@ -2072,11 +2716,12 @@ void LoadSettings() {
 void PaintNavButton(LPDRAWITEMSTRUCT pDIS)
 {
     HDC hdc = pDIS->hDC; RECT rc = pDIS->rcItem; bool isPressed = (pDIS->itemState & ODS_SELECTED);
-    // Updated tab order: Home=0, Lonelith=1, Settings=2, SysInfo=3
+    // Updated tab order: Home=0, Lonelith=1, Settings=2, SysInfo=3, Customization=4
     bool isActive = (pDIS->CtlID == IDB_NAV_HOME && g_currentTab == 0) || 
                     (pDIS->CtlID == IDB_NAV_LONELITH && g_currentTab == 1) || 
                     (pDIS->CtlID == IDB_NAV_SETTINGS && g_currentTab == 2) ||
-                    (pDIS->CtlID == IDB_NAV_INFO && g_currentTab == 3);
+                    (pDIS->CtlID == IDB_NAV_INFO && g_currentTab == 3) ||
+                    (pDIS->CtlID == IDB_NAV_CUSTOMIZATION && g_currentTab == 4);
     COLORREF bgCol = CLR_BG_SIDEBAR; COLORREF txtCol = RGB(80, 80, 80);
     
     if (pDIS->CtlID == IDB_UNINSTALL_APP) { 
