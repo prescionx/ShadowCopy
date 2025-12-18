@@ -191,6 +191,9 @@ std::vector<std::wstring> g_cachedLonelithFiles;
 std::mutex g_lonelithFilesMutex;
 bool g_isWindowAlive = true;
 
+// Global brush for edit controls (theme-aware)
+HBRUSH g_hBrushEdit = NULL;
+
 // UI Kaynakları
 HFONT g_hFontTitle, g_hFontSubtitle, g_hFontNormal, g_hFontSmall, g_hFontMono;
 HBRUSH g_hBrushMainBg, g_hBrushSidebar;
@@ -1792,23 +1795,44 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 void InitResources()
 {
     // Use Segoe UI Variable Display for modern look, fallback to Segoe UI
-    g_hFontTitle = CreateFontW(30, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI Variable Display");
-    if (!g_hFontTitle) g_hFontTitle = CreateFontW(30, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
+    HFONT hTempFont = CreateFontW(30, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI Variable Display");
+    if (hTempFont) {
+        g_hFontTitle = hTempFont;
+    } else {
+        g_hFontTitle = CreateFontW(30, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
+    }
     
-    g_hFontSubtitle = CreateFontW(20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI Variable Text");
-    if (!g_hFontSubtitle) g_hFontSubtitle = CreateFontW(20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
+    hTempFont = CreateFontW(20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI Variable Text");
+    if (hTempFont) {
+        g_hFontSubtitle = hTempFont;
+    } else {
+        g_hFontSubtitle = CreateFontW(20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
+    }
     
-    g_hFontNormal = CreateFontW(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI Variable Text");
-    if (!g_hFontNormal) g_hFontNormal = CreateFontW(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
+    hTempFont = CreateFontW(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI Variable Text");
+    if (hTempFont) {
+        g_hFontNormal = hTempFont;
+    } else {
+        g_hFontNormal = CreateFontW(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
+    }
     
-    g_hFontSmall = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI Variable Text");
-    if (!g_hFontSmall) g_hFontSmall = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
+    hTempFont = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI Variable Text");
+    if (hTempFont) {
+        g_hFontSmall = hTempFont;
+    } else {
+        g_hFontSmall = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
+    }
     
-    g_hFontMono = CreateFontW(15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Cascadia Code");
-    if (!g_hFontMono) g_hFontMono = CreateFontW(15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, TURKISH_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Consolas");
+    hTempFont = CreateFontW(15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Cascadia Code");
+    if (hTempFont) {
+        g_hFontMono = hTempFont;
+    } else {
+        g_hFontMono = CreateFontW(15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, TURKISH_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Consolas");
+    }
 
     g_hBrushMainBg = CreateSolidBrush(CLR_BG_MAIN);
     g_hBrushSidebar = CreateSolidBrush(CLR_BG_SIDEBAR);
+    g_hBrushEdit = CreateSolidBrush(CLR_INPUT_BG);
     
     // Load status icons
     g_hIconNoWinRAR = LoadIcon(g_hInst, MAKEINTRESOURCE(IDI_TRAY_NO_WINRAR));
@@ -1827,6 +1851,7 @@ void CleanupResources()
     DeleteObject(g_hFontTitle); DeleteObject(g_hFontSubtitle);
     DeleteObject(g_hFontNormal); DeleteObject(g_hFontSmall); DeleteObject(g_hFontMono);
     DeleteObject(g_hBrushMainBg); DeleteObject(g_hBrushSidebar);
+    if (g_hBrushEdit) DeleteObject(g_hBrushEdit);
     
     // Clean up icons
     if (g_hIconNoWinRAR && g_hIconNoWinRAR != g_hIconDefault) DestroyIcon(g_hIconNoWinRAR);
@@ -2467,10 +2492,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         HDC hdc = (HDC)wParam; 
         SetTextColor(hdc, CLR_TEXT_MAIN); 
         SetBkColor(hdc, CLR_INPUT_BG);
-        static HBRUSH hEditBrush = NULL;
-        if (hEditBrush) DeleteObject(hEditBrush);
-        hEditBrush = CreateSolidBrush(CLR_INPUT_BG);
-        return (INT_PTR)hEditBrush;
+        return (INT_PTR)g_hBrushEdit;
     }
 
     // --- 6. KOMUT İŞLEYİCİ (Buton Tıklamaları) ---
@@ -3200,8 +3222,10 @@ void ApplyTheme() {
     // Recreate brushes with new colors
     if (g_hBrushMainBg) DeleteObject(g_hBrushMainBg);
     if (g_hBrushSidebar) DeleteObject(g_hBrushSidebar);
+    if (g_hBrushEdit) DeleteObject(g_hBrushEdit);
     g_hBrushMainBg = CreateSolidBrush(CLR_BG_MAIN);
     g_hBrushSidebar = CreateSolidBrush(CLR_BG_SIDEBAR);
+    g_hBrushEdit = CreateSolidBrush(CLR_INPUT_BG);
     
     // Update theme toggle button text
     HWND hThemeBtn = GetDlgItem(g_hMainWindow, IDB_TOGGLE_THEME);
