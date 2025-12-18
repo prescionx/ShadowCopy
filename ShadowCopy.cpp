@@ -275,7 +275,7 @@ bool ShowLoginDialog();
 bool ExtractRarTool(std::wstring& outPath);
 
 // Modern Edit Control
-HWND CreateModernEdit(int tabIndex, const std::wstring& text, int x, int y, int w, int h, HWND hParent, int id, bool password = false, bool readOnly = false, bool multiLine = false);
+HWND CreateModernEdit(int tabIndex, const std::wstring& text, int x, int y, int w, int h, HWND hParent, int id, bool password = false, bool readOnly = false, bool multiLine = false, bool numberMode = false);
 LRESULT CALLBACK ModernEditContainerProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 
 // Theme
@@ -1948,7 +1948,7 @@ LRESULT CALLBACK ModernEditContainerProc(HWND hWnd, UINT message, WPARAM wParam,
     return 0;
 }
 
-HWND CreateModernEdit(int tabIndex, const std::wstring& text, int x, int y, int w, int h, HWND hParent, int id, bool password, bool readOnly, bool multiLine, bool numberMode = false) {
+HWND CreateModernEdit(int tabIndex, const std::wstring& text, int x, int y, int w, int h, HWND hParent, int id, bool password, bool readOnly, bool multiLine, bool numberMode) {
 
     // Register class if not already registered
     static bool registered = false;
