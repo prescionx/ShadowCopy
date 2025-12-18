@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <commdlg.h>
 #include <thread>
+#include <mutex>
 #include <shellapi.h>
 #include <commctrl.h>
 #include <dwmapi.h>
@@ -114,6 +115,10 @@ const int TAB_COUNT = 5;  // Home, Lonelith, Settings, SysInfo, Customization
 const wchar_t* SPEED_TEST_URL = L"https://speed.cloudflare.com/__down?bytes=1000000";
 const DWORD SPEED_TEST_SIZE = 1000000;  // 1MB
 
+// Log settings
+const int MAX_LOG_LINES = 500;
+const int LOG_CLEANUP_LINES = 100;
+
 // --- GLOBAL DEĞİŞKENLER ---
 HINSTANCE g_hInst = NULL;
 HWND g_hMainWindow = NULL;
@@ -157,6 +162,8 @@ bool g_manualTrayIconSelection = false;  // Track if user manually selected an i
 
 // Lonelith file list cache
 std::vector<std::wstring> g_cachedLonelithFiles;
+std::mutex g_lonelithFilesMutex;
+bool g_isWindowAlive = true;
 
 // UI Kaynakları
 HFONT g_hFontTitle, g_hFontSubtitle, g_hFontNormal, g_hFontSmall, g_hFontMono;
@@ -2237,9 +2244,18 @@ void SwitchTab(int index)
         
         // Refresh Lonelith file list asynchronously when switching to Lonelith tab
         std::thread([]() {
-            g_cachedLonelithFiles = GetFilesFromLonelith();
-            // Update UI in main thread
-            PostMessage(g_hMainWindow, WM_UPDATE_LONELITH_FILES, 0, 0);
+            std::vector<std::wstring> files = GetFilesFromLonelith();
+            
+            // Thread-safe update of cached files
+            {
+                std::lock_guard<std::mutex> lock(g_lonelithFilesMutex);
+                g_cachedLonelithFiles = files;
+            }
+            
+            // Update UI in main thread only if window is still alive
+            if (g_isWindowAlive && g_hMainWindow) {
+                PostMessage(g_hMainWindow, WM_UPDATE_LONELITH_FILES, 0, 0);
+            }
         }).detach();
     }
     
@@ -2637,10 +2653,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_UPDATE_LONELITH_FILES:
         if (g_hLonelithFileList) {
             SendMessage(g_hLonelithFileList, LB_RESETCONTENT, 0, 0);
-            if (g_cachedLonelithFiles.empty()) {
+            
+            // Thread-safe read of cached files
+            std::vector<std::wstring> filesCopy;
+            {
+                std::lock_guard<std::mutex> lock(g_lonelithFilesMutex);
+                filesCopy = g_cachedLonelithFiles;
+            }
+            
+            if (filesCopy.empty()) {
                 SendMessage(g_hLonelithFileList, LB_ADDSTRING, 0, (LPARAM)L"📭 Dosya bulunamadı.");
             } else {
-                for (const auto& file : g_cachedLonelithFiles) {
+                for (const auto& file : filesCopy) {
                     SendMessage(g_hLonelithFileList, LB_ADDSTRING, 0, (LPARAM)file.c_str());
                 }
             }
@@ -2668,6 +2692,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         // --- 11. ÇIKIŞ ---
     case WM_DESTROY:
+        g_isWindowAlive = false;  // Signal threads that window is being destroyed
         PostQuitMessage(0);
         break;  
 
@@ -2819,13 +2844,12 @@ void LogMessage(const std::wstring& message) {
         
         // Get current line count
         int lineCount = SendMessageW(g_hStatusText, EM_GETLINECOUNT, 0, 0);
-        const int MAX_LOG_LINES = 500;
         
-        // If we exceed the limit, remove the oldest lines
-        if (lineCount > MAX_LOG_LINES) {
-            // Delete the first 100 lines to make room
+        // If we exceed or reach the limit, remove the oldest lines
+        if (lineCount >= MAX_LOG_LINES) {
+            // Delete the first LOG_CLEANUP_LINES to make room
             int firstLineIndex = SendMessageW(g_hStatusText, EM_LINEINDEX, 0, 0);
-            int lineToDeleteEnd = SendMessageW(g_hStatusText, EM_LINEINDEX, 100, 0);
+            int lineToDeleteEnd = SendMessageW(g_hStatusText, EM_LINEINDEX, LOG_CLEANUP_LINES, 0);
             SendMessageW(g_hStatusText, EM_SETSEL, firstLineIndex, lineToDeleteEnd);
             SendMessageW(g_hStatusText, EM_REPLACESEL, FALSE, (LPARAM)L"");
         }
