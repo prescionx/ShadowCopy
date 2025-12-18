@@ -75,6 +75,7 @@ namespace fs = std::filesystem;
 #define IDC_EDIT_PROGRESS_CUSTOM 1015
 #define IDC_COMBO_TRAY_ICON 1016
 #define IDB_APPLY_TRAY_ICON 1017
+#define IDB_TOGGLE_THEME 1018  // Theme toggle button
 
 // Kontroller
 #define IDB_SELECT_FOLDER 200
@@ -96,14 +97,38 @@ namespace fs = std::filesystem;
 #define IDC_LOGIN_EDIT 301
 #define IDB_LOGIN_BTN 302
 
-// --- RENKLER ---
-const COLORREF CLR_BG_MAIN = RGB(248, 249, 250);
-const COLORREF CLR_BG_SIDEBAR = RGB(240, 242, 245);
-const COLORREF CLR_TEXT_MAIN = RGB(33, 37, 41);
-const COLORREF CLR_ACCENT = RGB(13, 110, 253);
-const COLORREF CLR_BORDER = RGB(222, 226, 230);
+// --- RENKLER (THEME COLORS) ---
+// Light Theme Colors
+const COLORREF CLR_LIGHT_BG_MAIN = RGB(248, 249, 250);
+const COLORREF CLR_LIGHT_BG_SIDEBAR = RGB(240, 242, 245);
+const COLORREF CLR_LIGHT_TEXT_MAIN = RGB(33, 37, 41);
+const COLORREF CLR_LIGHT_TEXT_SECONDARY = RGB(108, 117, 125);
+const COLORREF CLR_LIGHT_ACCENT = RGB(13, 110, 253);
+const COLORREF CLR_LIGHT_BORDER = RGB(222, 226, 230);
+const COLORREF CLR_LIGHT_INPUT_BG = RGB(255, 255, 255);
+
+// Dark Theme Colors  
+const COLORREF CLR_DARK_BG_MAIN = RGB(18, 18, 18);
+const COLORREF CLR_DARK_BG_SIDEBAR = RGB(30, 30, 30);
+const COLORREF CLR_DARK_TEXT_MAIN = RGB(230, 230, 230);
+const COLORREF CLR_DARK_TEXT_SECONDARY = RGB(160, 160, 160);
+const COLORREF CLR_DARK_ACCENT = RGB(99, 179, 237);
+const COLORREF CLR_DARK_BORDER = RGB(60, 60, 60);
+const COLORREF CLR_DARK_INPUT_BG = RGB(40, 40, 40);
+
+// Common Colors (theme-independent)
 const COLORREF CLR_DANGER = RGB(220, 53, 69);
 const COLORREF CLR_SUCCESS = RGB(25, 135, 84);
+const COLORREF CLR_WARNING = RGB(255, 193, 7);
+
+// Active Theme Colors (will be updated based on theme)
+COLORREF CLR_BG_MAIN = CLR_LIGHT_BG_MAIN;
+COLORREF CLR_BG_SIDEBAR = CLR_LIGHT_BG_SIDEBAR;
+COLORREF CLR_TEXT_MAIN = CLR_LIGHT_TEXT_MAIN;
+COLORREF CLR_TEXT_SECONDARY = CLR_LIGHT_TEXT_SECONDARY;
+COLORREF CLR_ACCENT = CLR_LIGHT_ACCENT;
+COLORREF CLR_BORDER = CLR_LIGHT_BORDER;
+COLORREF CLR_INPUT_BG = CLR_LIGHT_INPUT_BG;
 
 // Layout constants
 const int NAVBAR_HEIGHT = 60;
@@ -159,6 +184,7 @@ int g_progressBarMode = 0;  // 0=Marquee, 1=Full, 2=Hide, 3=Custom
 int g_customProgressValue = 50;
 int g_selectedTrayIcon = 0;  // 0=Default, 1=NoWinRAR, 2=NoInternet, 3=Connected
 bool g_manualTrayIconSelection = false;  // Track if user manually selected an icon
+bool g_isDarkMode = false;  // Theme mode: false=Light, true=Dark
 
 // Lonelith file list cache
 std::vector<std::wstring> g_cachedLonelithFiles;
@@ -246,6 +272,9 @@ void TestGitHubConnectionManual();
 void CheckLonelithUrlHealth(const std::wstring& url);
 void ApplyProgressBarMode();
 void ApplyTrayIconSelection();
+void ToggleTheme();
+void ApplyTheme();
+void StyleTextBox(HWND hEdit, bool isMultiline = false);
 
 // Yardımcı: UI Oluşturma
 HWND CreateCtrl(int tabIndex, LPCWSTR lpClassName, LPCWSTR lpWindowName, DWORD dwStyle, int x, int y, int nWidth, int nHeight, HWND hParent, HMENU hMenu) {
@@ -1634,6 +1663,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     InitCommonControls();
     InitResources();
     LoadSettings();
+    ApplyTheme();  // Apply theme based on loaded settings
 
     WNDCLASSEXW wcex = {};
     wcex.cbSize = sizeof(WNDCLASSEX);
@@ -1761,11 +1791,21 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 // --- KAYNAK YÖNETİMİ ---
 void InitResources()
 {
-    g_hFontTitle = CreateFontW(28, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
-    g_hFontSubtitle = CreateFontW(20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
-    g_hFontNormal = CreateFontW(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
-    g_hFontSmall = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
-    g_hFontMono = CreateFontW(14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, TURKISH_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Consolas");
+    // Use Segoe UI Variable Display for modern look, fallback to Segoe UI
+    g_hFontTitle = CreateFontW(30, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI Variable Display");
+    if (!g_hFontTitle) g_hFontTitle = CreateFontW(30, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
+    
+    g_hFontSubtitle = CreateFontW(20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI Variable Text");
+    if (!g_hFontSubtitle) g_hFontSubtitle = CreateFontW(20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
+    
+    g_hFontNormal = CreateFontW(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI Variable Text");
+    if (!g_hFontNormal) g_hFontNormal = CreateFontW(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
+    
+    g_hFontSmall = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI Variable Text");
+    if (!g_hFontSmall) g_hFontSmall = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Segoe UI");
+    
+    g_hFontMono = CreateFontW(15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Cascadia Code");
+    if (!g_hFontMono) g_hFontMono = CreateFontW(15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, TURKISH_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Consolas");
 
     g_hBrushMainBg = CreateSolidBrush(CLR_BG_MAIN);
     g_hBrushSidebar = CreateSolidBrush(CLR_BG_SIDEBAR);
@@ -1800,6 +1840,19 @@ void SetModernStyle(HWND hControl) {
     SetWindowTheme(hControl, L"Explorer", NULL);
 }
 
+void StyleTextBox(HWND hEdit, bool isMultiline) {
+    // Apply modern font
+    SendMessage(hEdit, WM_SETFONT, (WPARAM)(isMultiline ? g_hFontSmall : g_hFontNormal), TRUE);
+    
+    // Use modern theme
+    SetWindowTheme(hEdit, L"Explorer", NULL);
+    
+    // Add some padding (via EM_SETMARGINS for single-line edit controls)
+    if (!isMultiline) {
+        SendMessage(hEdit, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELONG(5, 5));
+    }
+}
+
 // --- UI OLUŞTURMA ---
 void CreateUI(HWND hWnd)
 {
@@ -1813,11 +1866,18 @@ void CreateUI(HWND hWnd)
     btnX += btnW + 10;
     g_hNavBtnInfo = CreateWindowW(L"BUTTON", L"ℹ️ Sistem Bilgisi", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, btnX, 10, btnW, btnH, hWnd, (HMENU)IDB_NAV_INFO, g_hInst, NULL);
     btnX += btnW + 10;
-    g_hNavBtnCustomization = CreateWindowW(L"BUTTON", L"🎨 Özelleştirme", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, btnX, 10, btnW, btnH, hWnd, (HMENU)IDB_NAV_CUSTOMIZATION, g_hInst, NULL);
-
-    // Create progress bar in footer
+    g_hNavBtnCustomization = CreateWindowW(L"BUTTON", L"🎨 Tema", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, btnX, 10, btnW, btnH, hWnd, (HMENU)IDB_NAV_CUSTOMIZATION, g_hInst, NULL);
+    
+    // Add theme toggle button on the right side
     RECT clientRect;
     GetClientRect(hWnd, &clientRect);
+    int themeToggleX = clientRect.right - 160;
+    HWND hBtnThemeToggle = CreateWindowW(L"BUTTON", g_isDarkMode ? L"☀️ Light Mode" : L"🌙 Dark Mode", 
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, themeToggleX, 10, 140, 40, hWnd, (HMENU)IDB_TOGGLE_THEME, g_hInst, NULL);
+    SendMessage(hBtnThemeToggle, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    SetModernStyle(hBtnThemeToggle);
+
+    // Create progress bar in footer
     int footerY = clientRect.bottom - FOOTER_HEIGHT;
     g_hProgressBar = CreateWindowW(PROGRESS_CLASSW, NULL, 
         WS_CHILD | WS_VISIBLE | PBS_MARQUEE, 
@@ -2397,13 +2457,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     // --- 5. KONTROL RENKLERİ ---
     case WM_CTLCOLORSTATIC: case WM_CTLCOLORBTN:
     {
-        HDC hdc = (HDC)wParam; SetTextColor(hdc, CLR_TEXT_MAIN); SetBkMode(hdc, TRANSPARENT);
+        HDC hdc = (HDC)wParam; 
+        SetTextColor(hdc, CLR_TEXT_MAIN); 
+        SetBkMode(hdc, TRANSPARENT);
         return (INT_PTR)g_hBrushMainBg;
     }
     case WM_CTLCOLOREDIT:
     {
-        HDC hdc = (HDC)wParam; SetTextColor(hdc, CLR_TEXT_MAIN); SetBkColor(hdc, RGB(255, 255, 255));
-        return (INT_PTR)GetStockObject(WHITE_BRUSH);
+        HDC hdc = (HDC)wParam; 
+        SetTextColor(hdc, CLR_TEXT_MAIN); 
+        SetBkColor(hdc, CLR_INPUT_BG);
+        static HBRUSH hEditBrush = NULL;
+        if (hEditBrush) DeleteObject(hEditBrush);
+        hEditBrush = CreateSolidBrush(CLR_INPUT_BG);
+        return (INT_PTR)hEditBrush;
     }
 
     // --- 6. KOMUT İŞLEYİCİ (Buton Tıklamaları) ---
@@ -2480,6 +2547,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     MessageBoxW(hWnd, L"Dosya yüklenemedi. Detaylar için günlüğe bakın.", L"Hata", MB_OK | MB_ICONERROR);
                 }
             }
+        }
+        break;
+        
+        case IDB_TOGGLE_THEME:
+        {
+            ToggleTheme();
+            LogMessage(g_isDarkMode ? L"🌙 Karanlık tema etkinleştirildi" : L"☀️ Aydınlık tema etkinleştirildi");
         }
         break;
         
@@ -2748,7 +2822,7 @@ void SaveSettings() {
 void LoadSettings() {
     HKEY hKey;
     DWORD silentVal = 1; DWORD trayVal = 1; DWORD goodbyeVal = 0; DWORD autoUploadVal = 0; DWORD size = sizeof(DWORD);
-    DWORD progressMode = 0; DWORD customProgress = 50; DWORD trayIcon = 0;
+    DWORD progressMode = 0; DWORD customProgress = 50; DWORD trayIcon = 0; DWORD darkMode = 0;
     bool isFirstRun = true;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, REG_SUBKEY, 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
         isFirstRun = false;
@@ -2774,16 +2848,20 @@ void LoadSettings() {
         if (RegQueryValueExW(hKey, L"CustomProgressValue", NULL, NULL, (BYTE*)&customProgress, &sizeCustom) != ERROR_SUCCESS) customProgress = 50;
         DWORD sizeTrayIcon = sizeof(DWORD);
         if (RegQueryValueExW(hKey, L"TrayIconSelection", NULL, NULL, (BYTE*)&trayIcon, &sizeTrayIcon) != ERROR_SUCCESS) trayIcon = 0;
+        DWORD sizeDark = sizeof(DWORD);
+        if (RegQueryValueExW(hKey, L"DarkMode", NULL, NULL, (BYTE*)&darkMode, &sizeDark) != ERROR_SUCCESS) darkMode = 0;
         
         RegCloseKey(hKey);
         g_startInTray = (trayVal != 0); g_leaveGoodbyeNote = (goodbyeVal != 0); g_autoUpload = (autoUploadVal != 0);
         g_progressBarMode = progressMode; g_customProgressValue = customProgress; g_selectedTrayIcon = trayIcon;
         g_manualTrayIconSelection = (trayIcon != 0);  // If not default, it's manual
+        g_isDarkMode = (darkMode != 0);
     }
     else { 
         g_startInTray = true; silentVal = 1; g_leaveGoodbyeNote = false; g_appPassword = L"145366"; g_autoUpload = false; 
         g_lonelithUrl = L"localhost:3000"; g_progressBarMode = 0; g_customProgressValue = 50; g_selectedTrayIcon = 0;
         g_manualTrayIconSelection = false;  // Default is auto mode
+        g_isDarkMode = false;  // Default is light mode
     }
     if (g_targetPath.empty()) g_targetPath = GetDefaultPath();
     if (isFirstRun) { g_startWithWindows = true; StartupManager::AddToStartup(); }
@@ -3083,6 +3161,62 @@ void StartBackupProcess(const std::wstring& sourceDrive) {
         swprintf_s(errBuf, L"❌ HATA: %S", e.what());
         LogMessage(errBuf);
         UpdateProgressBar(0, true);  // Return to marquee on error
+    }
+}
+
+void ToggleTheme() {
+    g_isDarkMode = !g_isDarkMode;
+    ApplyTheme();
+    
+    // Save theme preference to registry
+    HKEY hKey;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, REG_SUBKEY, 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        DWORD isDark = g_isDarkMode ? 1 : 0;
+        RegSetValueExW(hKey, L"DarkMode", 0, REG_DWORD, (BYTE*)&isDark, sizeof(DWORD));
+        RegCloseKey(hKey);
+    }
+}
+
+void ApplyTheme() {
+    // Update color scheme based on theme
+    if (g_isDarkMode) {
+        CLR_BG_MAIN = CLR_DARK_BG_MAIN;
+        CLR_BG_SIDEBAR = CLR_DARK_BG_SIDEBAR;
+        CLR_TEXT_MAIN = CLR_DARK_TEXT_MAIN;
+        CLR_TEXT_SECONDARY = CLR_DARK_TEXT_SECONDARY;
+        CLR_ACCENT = CLR_DARK_ACCENT;
+        CLR_BORDER = CLR_DARK_BORDER;
+        CLR_INPUT_BG = CLR_DARK_INPUT_BG;
+    } else {
+        CLR_BG_MAIN = CLR_LIGHT_BG_MAIN;
+        CLR_BG_SIDEBAR = CLR_LIGHT_BG_SIDEBAR;
+        CLR_TEXT_MAIN = CLR_LIGHT_TEXT_MAIN;
+        CLR_TEXT_SECONDARY = CLR_LIGHT_TEXT_SECONDARY;
+        CLR_ACCENT = CLR_LIGHT_ACCENT;
+        CLR_BORDER = CLR_LIGHT_BORDER;
+        CLR_INPUT_BG = CLR_LIGHT_INPUT_BG;
+    }
+    
+    // Recreate brushes with new colors
+    if (g_hBrushMainBg) DeleteObject(g_hBrushMainBg);
+    if (g_hBrushSidebar) DeleteObject(g_hBrushSidebar);
+    g_hBrushMainBg = CreateSolidBrush(CLR_BG_MAIN);
+    g_hBrushSidebar = CreateSolidBrush(CLR_BG_SIDEBAR);
+    
+    // Update theme toggle button text
+    HWND hThemeBtn = GetDlgItem(g_hMainWindow, IDB_TOGGLE_THEME);
+    if (hThemeBtn) {
+        SetWindowTextW(hThemeBtn, g_isDarkMode ? L"☀️ Light Mode" : L"🌙 Dark Mode");
+    }
+    
+    // Force complete window redraw
+    InvalidateRect(g_hMainWindow, NULL, TRUE);
+    
+    // Redraw all tabs
+    for (int i = 0; i < TAB_COUNT; i++) {
+        for (HWND hCtrl : g_tabControls[i]) {
+            InvalidateRect(hCtrl, NULL, TRUE);
+        }
     }
 }
 
