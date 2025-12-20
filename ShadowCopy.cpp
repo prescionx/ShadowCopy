@@ -3308,18 +3308,21 @@ bool CheckResourceFiles() {
                 } else {
                     LogMessage(L"  ⚠️ " + iconFile + L" - Dosya boyutu alınamadı");
                     failedCount++;
+                    allValid = false;
                 }
             } else {
                 LogMessage(L"  ⚠️ " + iconFile + L" - Dosya bulunamadı (derleme öncesi)");
                 failedCount++;
+                allValid = false;
             }
         } catch (const fs::filesystem_error& ex) {
             LogMessage(L"  ❌ " + iconFile + L" - Hata: Dosya erişim hatası");
             failedCount++;
+            allValid = false;
         }
     }
     
-    if (allValid && failedCount == 0) {
+    if (allValid) {
         LogMessage(L"✅ Tüm kaynak dosyaları başarıyla kontrol edildi! (" + 
                    std::to_wstring(checkedCount) + L" dosya)");
     } else {
