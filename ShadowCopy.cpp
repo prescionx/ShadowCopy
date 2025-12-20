@@ -2493,9 +2493,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     // --- 5. KONTROL RENKLERİ ---
     case WM_CTLCOLORSTATIC: case WM_CTLCOLORBTN:
     {
-        HDC hdc = (HDC)wParam; 
-        SetTextColor(hdc, CLR_TEXT_MAIN); 
-        SetBkMode(hdc, TRANSPARENT);
+        HDC hdc = (HDC)wParam;
+        SetTextColor(hdc, CLR_TEXT_MAIN);
+
+        // DEĞİŞİKLİK: Metin arka planını şeffaf yapmak yerine OPAQUE (Opak) yapıyoruz.
+        // Ve arka plan rengini, pencere arka plan rengiyle (CLR_BG_MAIN) aynı yapıyoruz.
+        // Bu sayede metin yazılmadan önce arkasındaki eski pikseller bu renkle boyanıp temizlenir.
+        SetBkMode(hdc, OPAQUE);
+        SetBkColor(hdc, CLR_BG_MAIN);
+
         return (INT_PTR)g_hBrushMainBg;
     }
     case WM_CTLCOLOREDIT:
