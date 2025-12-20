@@ -1,3 +1,0 @@
-/home/runner/work/ShadowCopy/ShadowCopy/build/_deps/cycfi_infra-subbuild/CMakeFiles/cycfi_infra-populate.dir
-/home/runner/work/ShadowCopy/ShadowCopy/build/_deps/cycfi_infra-subbuild/CMakeFiles/edit_cache.dir
-/home/runner/work/ShadowCopy/ShadowCopy/build/_deps/cycfi_infra-subbuild/CMakeFiles/rebuild_cache.dir
