@@ -20,6 +20,10 @@ ShadowCopy is a secure USB backup application that automatically encrypts and ba
 - Connection health monitoring
 
 ### UI/UX Improvements (Latest Release)
+- **NEW**: **Acrylic Material Effect** - Windows 10+ semi-transparent blurred window background
+- **NEW**: **Modern Textbox Design** - Fluent Design System textboxes with rounded corners and focus effects
+- **NEW**: **Window Transparency** - Layered window with 98% opacity for modern aesthetic
+- **NEW**: **Theme-Aware Acrylic** - Acrylic tint color changes with light/dark theme
 - **NEW**: Top horizontal navigation bar (replaces left sidebar)
 - **NEW**: 5 tabs: Home, Lonelith, Settings, System Info, Customization
 - **NEW**: Customization tab with theme and tray icon selection
@@ -56,6 +60,18 @@ The system tray icon dynamically changes to reflect current status:
 **Manual Tray Icon Selection**: Users can manually override the automatic tray icon through the Customization tab. The icon changes immediately without requiring an application restart.
 
 ## Configuration
+
+### Modern UI Features
+The application now features a modern, semi-transparent UI with the following characteristics:
+- **Acrylic Blur Effect**: Windows 10 1803+ acrylic material with blur-behind effect
+- **Transparent Window**: 98% opacity layered window for modern aesthetic
+- **Fluent Design Textboxes**: Modern textboxes with:
+  - Rounded corners via CFD (Common File Dialog) theme
+  - Internal padding for better readability
+  - Focus effects with accent color highlights
+  - Seamless integration with acrylic background
+- **Theme-Aware**: Acrylic tint and UI colors automatically adjust for light/dark themes
+- **DWM Integration**: Full Desktop Window Manager support for blur and composition effects
 
 ### UI Layout
 - **Top Navigation**: 60px high horizontal navbar with 5 tabs
@@ -107,10 +123,12 @@ All settings are saved to registry:
 
 ## Requirements
 
-- Windows 10 or later
+- **Windows 10 version 1803 or later** (for full acrylic effect support)
+  - Fallback to DWM blur for earlier Windows 10 versions
 - WinRAR installed (for backup functionality)
 - Internet connection (optional, for cloud upload)
 - Visual Studio 2019 or later for building
+- Desktop Window Manager (DWM) enabled (default on Windows 10+)
 
 ## Building
 
@@ -132,6 +150,8 @@ All settings are saved to registry:
 - Password entry: Shake animation on incorrect login
 - Page transitions: Framework in place for future enhancement
 - Progress bar: Smooth marquee animation when idle
+- Acrylic effect: Dynamic blur and transparency with theme switching
+- Textbox focus: Modern accent color highlight on focus
 
 ### Progress Bar States
 - **Marquee**: Active when no operations running (default)
