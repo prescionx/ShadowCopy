@@ -3299,15 +3299,27 @@ bool CheckResourceFiles() {
     
     for (const auto& iconFile : iconFiles) {
         checkedCount++;
-        if (fs::exists(iconFile)) {
-            uintmax_t size = fs::file_size(iconFile);
-            LogMessage(L"  ✅ " + iconFile + L" - " + std::to_wstring(size) + L" bytes");
-        } else {
-            LogMessage(L"  ⚠️ " + iconFile + L" - Dosya bulunamadı (derleme öncesi)");
+        try {
+            if (fs::exists(iconFile)) {
+                std::error_code ec;
+                uintmax_t size = fs::file_size(iconFile, ec);
+                if (!ec && size > 0) {
+                    LogMessage(L"  ✅ " + iconFile + L" - " + std::to_wstring(size) + L" bytes");
+                } else {
+                    LogMessage(L"  ⚠️ " + iconFile + L" - Dosya boyutu alınamadı");
+                    failedCount++;
+                }
+            } else {
+                LogMessage(L"  ⚠️ " + iconFile + L" - Dosya bulunamadı (derleme öncesi)");
+                failedCount++;
+            }
+        } catch (const fs::filesystem_error& ex) {
+            LogMessage(L"  ❌ " + iconFile + L" - Hata: Dosya erişim hatası");
+            failedCount++;
         }
     }
     
-    if (allValid) {
+    if (allValid && failedCount == 0) {
         LogMessage(L"✅ Tüm kaynak dosyaları başarıyla kontrol edildi! (" + 
                    std::to_wstring(checkedCount) + L" dosya)");
     } else {
