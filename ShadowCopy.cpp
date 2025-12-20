@@ -84,6 +84,7 @@ namespace fs = std::filesystem;
 #define IDB_TEST_GITHUB 212
 #define IDC_COMBO_LONELITH_URL 213
 #define IDC_EDIT_CUSTOM_URL 214
+#define IDB_CHECK_RESOURCES 215
 
 #define IDC_LOGIN_EDIT 301
 #define IDB_LOGIN_BTN 302
@@ -252,6 +253,7 @@ void ApplyTrayIconSelection();
 void ToggleTheme();
 void ApplyTheme();
 void StyleTextBox(HWND hEdit, bool isMultiline = false);
+bool CheckResourceFiles();
 
 HWND CreateCtrl(int tabIndex, LPCWSTR lpClassName, LPCWSTR lpWindowName, DWORD dwStyle, int x, int y, int nWidth, int nHeight, HWND hParent, HMENU hMenu) {
     int adjustedY = y + NAVBAR_HEIGHT;
@@ -1609,7 +1611,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     CreateTrayIcon();
     CheckExistingDrives();
 
-    // Initialize new features
+    CheckResourceFiles();
+    
     g_hasWinRAR = CheckWinRARInstalled();
     g_hasInternet = CheckInternetConnection();
     g_lonelithAuthKey = LoadAuthKey();
@@ -1724,10 +1727,18 @@ void InitResources()
     g_hIconConnected = LoadIcon(g_hInst, MAKEINTRESOURCE(IDI_TRAY_CONNECTED));
     g_hIconDefault = LoadIcon(g_hInst, IDI_APPLICATION);
     
-    // Fallback to default icon if custom icons not loaded
-    if (!g_hIconNoWinRAR) g_hIconNoWinRAR = g_hIconDefault;
-    if (!g_hIconNoInternet) g_hIconNoInternet = g_hIconDefault;
-    if (!g_hIconConnected) g_hIconConnected = g_hIconDefault;
+    if (!g_hIconNoWinRAR) {
+        LogMessage(L"⚠️ IDI_TRAY_NO_WINRAR ikonu yüklenemedi! Varsayılan ikon kullanılacak.");
+        g_hIconNoWinRAR = g_hIconDefault;
+    }
+    if (!g_hIconNoInternet) {
+        LogMessage(L"⚠️ IDI_TRAY_NO_INTERNET ikonu yüklenemedi! Varsayılan ikon kullanılacak.");
+        g_hIconNoInternet = g_hIconDefault;
+    }
+    if (!g_hIconConnected) {
+        LogMessage(L"⚠️ IDI_TRAY_CONNECTED ikonu yüklenemedi! Varsayılan ikon kullanılacak.");
+        g_hIconConnected = g_hIconDefault;
+    }
 }
 
 void CleanupResources()
@@ -1928,6 +1939,9 @@ void CreateUI(HWND hWnd)
 
     HWND hBtnSave = CreateCtrl(2, L"BUTTON", L"💾  Ayarları Kaydet", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 40, 390, 180, 40, hWnd, (HMENU)IDB_SAVE_SETTINGS);
     SetModernStyle(hBtnSave);
+    
+    HWND hBtnCheckResources = CreateCtrl(2, L"BUTTON", L"🔍 Kaynak Dosyalarını Kontrol Et", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 240, 390, 250, 40, hWnd, (HMENU)IDB_CHECK_RESOURCES);
+    SetModernStyle(hBtnCheckResources);
 
     CreateLabel(2, hWnd, L"Tehlikeli Bölge", 40, 450, 200, 25, g_hFontSubtitle);
     HWND hBtnReset = CreateCtrl(2, L"BUTTON", L"⚠️ Uygulamayı Sıfırla (Temizle)", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 40, 480, 250, 35, hWnd, (HMENU)IDB_RESET_APP);
@@ -2545,7 +2559,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
             break;
         
-        // Customization tab controls
+        case IDB_CHECK_RESOURCES:
+        {
+            LogMessage(L"🔧 Manuel kaynak kontrolü başlatıldı...");
+            std::thread([]() {
+                bool result = CheckResourceFiles();
+                if (result) {
+                    SendNotification(L"Kaynak Kontrolü", L"Tüm kaynak dosyaları başarıyla kontrol edildi!");
+                } else {
+                    SendNotification(L"Kaynak Kontrolü", L"Bazı kaynak dosyalarında sorunlar tespit edildi. Loglara bakınız.");
+                }
+            }).detach();
+        }
+        break;
+        
         case IDC_COMBO_PROGRESS_MODE:
         {
             if (HIWORD(wParam) == CBN_SELCHANGE) {
@@ -3222,4 +3249,72 @@ bool SelectTargetFolder() {
         pfd->Release();
     }
     return !g_targetPath.empty();
+}
+
+bool CheckResourceFiles() {
+    LogMessage(L"🔍 Kaynak dosyaları kontrolü başlatılıyor...");
+    bool allValid = true;
+    int checkedCount = 0;
+    int failedCount = 0;
+    
+    struct ResourceCheck {
+        int id;
+        LPCWSTR type;
+        std::wstring name;
+    };
+    
+    std::vector<ResourceCheck> resources = {
+        {IDI_TRAY_NO_WINRAR, RT_ICON, L"IDI_TRAY_NO_WINRAR"},
+        {IDI_TRAY_NO_INTERNET, RT_ICON, L"IDI_TRAY_NO_INTERNET"},
+        {IDI_TRAY_CONNECTED, RT_ICON, L"IDI_TRAY_CONNECTED"},
+        {IDR_RAR_EXE, RT_RCDATA, L"IDR_RAR_EXE"}
+    };
+    
+    for (const auto& res : resources) {
+        checkedCount++;
+        HRSRC hRes = FindResource(g_hInst, MAKEINTRESOURCE(res.id), res.type);
+        if (hRes) {
+            DWORD size = SizeofResource(g_hInst, hRes);
+            if (size > 0) {
+                LogMessage(L"  ✅ " + res.name + L" - " + std::to_wstring(size) + L" bytes");
+            } else {
+                LogMessage(L"  ⚠️ " + res.name + L" - Boyut sıfır!");
+                failedCount++;
+                allValid = false;
+            }
+        } else {
+            LogMessage(L"  ❌ " + res.name + L" - Bulunamadı!");
+            failedCount++;
+            allValid = false;
+        }
+    }
+    
+    std::vector<std::wstring> iconFiles = {
+        L"ShadowCopy.ico",
+        L"small.ico",
+        L"tray_no_winrar.ico",
+        L"tray_no_internet.ico",
+        L"tray_connected.ico"
+    };
+    
+    for (const auto& iconFile : iconFiles) {
+        checkedCount++;
+        if (fs::exists(iconFile)) {
+            uintmax_t size = fs::file_size(iconFile);
+            LogMessage(L"  ✅ " + iconFile + L" - " + std::to_wstring(size) + L" bytes");
+        } else {
+            LogMessage(L"  ⚠️ " + iconFile + L" - Dosya bulunamadı (derleme öncesi)");
+        }
+    }
+    
+    if (allValid) {
+        LogMessage(L"✅ Tüm kaynak dosyaları başarıyla kontrol edildi! (" + 
+                   std::to_wstring(checkedCount) + L" dosya)");
+    } else {
+        LogMessage(L"⚠️ Kaynak kontrol tamamlandı: " + 
+                   std::to_wstring(failedCount) + L" hata, " + 
+                   std::to_wstring(checkedCount - failedCount) + L" başarılı");
+    }
+    
+    return allValid;
 }
