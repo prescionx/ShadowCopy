@@ -98,23 +98,23 @@ namespace fs = std::filesystem;
 #define IDB_LOGIN_BTN 302
 
 // --- RENKLER (THEME COLORS) ---
-// Light Theme Colors
-const COLORREF CLR_LIGHT_BG_MAIN = RGB(248, 249, 250);
-const COLORREF CLR_LIGHT_BG_SIDEBAR = RGB(240, 242, 245);
+// Light Theme Colors - Updated for transparency support
+const COLORREF CLR_LIGHT_BG_MAIN = RGB(252, 252, 252);
+const COLORREF CLR_LIGHT_BG_SIDEBAR = RGB(245, 245, 245);
 const COLORREF CLR_LIGHT_TEXT_MAIN = RGB(33, 37, 41);
 const COLORREF CLR_LIGHT_TEXT_SECONDARY = RGB(108, 117, 125);
-const COLORREF CLR_LIGHT_ACCENT = RGB(13, 110, 253);
-const COLORREF CLR_LIGHT_BORDER = RGB(222, 226, 230);
+const COLORREF CLR_LIGHT_ACCENT = RGB(0, 120, 212);
+const COLORREF CLR_LIGHT_BORDER = RGB(225, 225, 225);
 const COLORREF CLR_LIGHT_INPUT_BG = RGB(255, 255, 255);
 
-// Dark Theme Colors  
-const COLORREF CLR_DARK_BG_MAIN = RGB(18, 18, 18);
-const COLORREF CLR_DARK_BG_SIDEBAR = RGB(30, 30, 30);
-const COLORREF CLR_DARK_TEXT_MAIN = RGB(230, 230, 230);
-const COLORREF CLR_DARK_TEXT_SECONDARY = RGB(160, 160, 160);
-const COLORREF CLR_DARK_ACCENT = RGB(99, 179, 237);
+// Dark Theme Colors - Updated for transparency support
+const COLORREF CLR_DARK_BG_MAIN = RGB(32, 32, 32);
+const COLORREF CLR_DARK_BG_SIDEBAR = RGB(43, 43, 43);
+const COLORREF CLR_DARK_TEXT_MAIN = RGB(255, 255, 255);
+const COLORREF CLR_DARK_TEXT_SECONDARY = RGB(180, 180, 180);
+const COLORREF CLR_DARK_ACCENT = RGB(96, 205, 255);
 const COLORREF CLR_DARK_BORDER = RGB(60, 60, 60);
-const COLORREF CLR_DARK_INPUT_BG = RGB(40, 40, 40);
+const COLORREF CLR_DARK_INPUT_BG = RGB(50, 50, 50);
 
 // Common Colors (theme-independent)
 const COLORREF CLR_DANGER = RGB(220, 53, 69);
@@ -280,6 +280,8 @@ void ApplyTrayIconSelection();
 void ToggleTheme();
 void ApplyTheme();
 void StyleTextBox(HWND hEdit, bool isMultiline = false);
+void EnableAcrylicEffect(HWND hWnd);
+HWND CreateModernTextBox(int tabIndex, HWND hParent, LPCWSTR defaultText, int x, int y, int w, int h, HMENU hMenu, DWORD extraStyle = 0);
 
 // Yardımcı: UI Oluşturma
 HWND CreateCtrl(int tabIndex, LPCWSTR lpClassName, LPCWSTR lpWindowName, DWORD dwStyle, int x, int y, int nWidth, int nHeight, HWND hParent, HMENU hMenu) {
@@ -1688,12 +1690,21 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     wcex.hIconSm = hAppIcon;
     RegisterClassExW(&wcex);
 
-    g_hMainWindow = CreateWindowExW(0, CLASS_NAME, L"Shadow Copy",
+    // Create window with layered style for transparency support
+    g_hMainWindow = CreateWindowExW(
+        WS_EX_LAYERED, // Enable layered window for transparency
+        CLASS_NAME, L"Shadow Copy",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
         CW_USEDEFAULT, 0, 900, 650,
         nullptr, nullptr, hInstance, nullptr);
 
     if (!g_hMainWindow) return FALSE;
+    
+    // Enable acrylic blur-behind effect for modern look
+    EnableAcrylicEffect(g_hMainWindow);
+    
+    // Set window opacity (slightly transparent for modern aesthetic)
+    SetLayeredWindowAttributes(g_hMainWindow, 0, 250, LWA_ALPHA); // 98% opacity
     
     // Set window icon explicitly
     if (hAppIcon) {
@@ -1701,7 +1712,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
         SendMessage(g_hMainWindow, WM_SETICON, ICON_SMALL, (LPARAM)hAppIcon);
     }
 
-    BOOL dark = FALSE;
+    // Apply dark mode to title bar if in dark theme
+    BOOL dark = g_isDarkMode ? TRUE : FALSE;
     DwmSetWindowAttribute(g_hMainWindow, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
 
     CreateUI(g_hMainWindow);
@@ -1889,6 +1901,99 @@ void StyleTextBox(HWND hEdit, bool isMultiline) {
     // manually in CreateUI for consistency with existing code patterns.
 }
 
+// Enable Windows 10+ acrylic blur-behind effect
+void EnableAcrylicEffect(HWND hWnd) {
+    // Check Windows version - acrylic is available on Windows 10 1803+
+    OSVERSIONINFOEXW osvi = { sizeof(osvi), 0, 0, 0, 0, {0}, 0, 0 };
+    DWORDLONG const dwlConditionMask = VerSetConditionMask(
+        VerSetConditionMask(
+            VerSetConditionMask(
+                0, VER_MAJORVERSION, VER_GREATER_EQUAL),
+            VER_MINORVERSION, VER_GREATER_EQUAL),
+        VER_BUILDNUMBER, VER_GREATER_EQUAL);
+    osvi.dwMajorVersion = 10;
+    osvi.dwMinorVersion = 0;
+    osvi.dwBuildNumber = 17134; // Windows 10 1803
+    
+    // Try modern acrylic effect first (Windows 10 1803+)
+    if (VerifyVersionInfoW(&osvi, VER_MAJORVERSION | VER_MINORVERSION | VER_BUILDNUMBER, dwlConditionMask)) {
+        // Use ACCENT_ENABLE_ACRYLICBLURBEHIND for modern acrylic effect
+        struct ACCENTPOLICY {
+            int nAccentState;
+            int nFlags;
+            int nColor;
+            int nAnimationId;
+        };
+        
+        struct WINCOMPATTRDATA {
+            int nAttribute;
+            PVOID pData;
+            ULONG ulDataSize;
+        };
+        
+        // Accent states
+        const int ACCENT_ENABLE_ACRYLICBLURBEHIND = 4;
+        
+        // Create acrylic effect with appropriate tint based on theme
+        ACCENTPOLICY accent = { 0 };
+        accent.nAccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND;
+        accent.nFlags = 2; // Enable gradient
+        
+        // Set tint color with alpha (format: 0xAABBGGRR)
+        if (g_isDarkMode) {
+            // Dark theme: dark tint with high transparency
+            accent.nColor = 0xCC1E1E1E; // 80% opacity dark gray
+        } else {
+            // Light theme: light tint with transparency
+            accent.nColor = 0xCCF5F5F5; // 80% opacity light gray
+        }
+        
+        WINCOMPATTRDATA data = { 19, &accent, sizeof(accent) }; // WCA_ACCENT_POLICY = 19
+        
+        typedef BOOL(WINAPI* pSetWindowCompositionAttribute)(HWND, WINCOMPATTRDATA*);
+        HMODULE hUser32 = GetModuleHandleW(L"user32.dll");
+        if (hUser32) {
+            pSetWindowCompositionAttribute SetWindowCompositionAttribute =
+                (pSetWindowCompositionAttribute)GetProcAddress(hUser32, "SetWindowCompositionAttribute");
+            if (SetWindowCompositionAttribute) {
+                SetWindowCompositionAttribute(hWnd, &data);
+            }
+        }
+    }
+    
+    // Fallback: Use DWM blur-behind effect for older Windows 10 versions
+    DWM_BLURBEHIND bb = { 0 };
+    bb.dwFlags = DWM_BB_ENABLE | DWM_BB_BLURREGION;
+    bb.fEnable = TRUE;
+    bb.hRgnBlur = CreateRectRgn(0, 0, -1, -1); // Full window blur
+    DwmEnableBlurBehindWindow(hWnd, &bb);
+    if (bb.hRgnBlur) DeleteObject(bb.hRgnBlur);
+    
+    // Enable window composition for transparency
+    MARGINS margins = { -1, -1, -1, -1 }; // Extend frame into entire window
+    DwmExtendFrameIntoClientArea(hWnd, &margins);
+}
+
+// Create modern textbox with custom styling
+HWND CreateModernTextBox(int tabIndex, HWND hParent, LPCWSTR defaultText, int x, int y, int w, int h, HMENU hMenu, DWORD extraStyle) {
+    DWORD style = WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | extraStyle;
+    HWND hEdit = CreateCtrl(tabIndex, L"EDIT", defaultText, style, x, y, w, h, hParent, hMenu);
+    
+    // Apply modern styling
+    SendMessage(hEdit, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    SetWindowTheme(hEdit, L"CFD", NULL); // Use modern Fluent Design theme
+    
+    // Add internal padding
+    SendMessage(hEdit, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELONG(8, 8));
+    
+    // Set background mode to transparent for better integration with acrylic
+    HDC hdc = GetDC(hEdit);
+    SetBkMode(hdc, TRANSPARENT);
+    ReleaseDC(hEdit, hdc);
+    
+    return hEdit;
+}
+
 // --- UI OLUŞTURMA ---
 void CreateUI(HWND hWnd)
 {
@@ -1959,13 +2064,11 @@ void CreateUI(HWND hWnd)
     SendMessage(g_hComboLonelithUrl, CB_ADDSTRING, 0, (LPARAM)L"▼ Başka bir URL gir...");
     SendMessage(g_hComboLonelithUrl, CB_SETCURSEL, 0, 0);
     
-    g_hEditCustomUrl = CreateCtrl(1, L"EDIT", L"", WS_CHILD | WS_BORDER | ES_AUTOHSCROLL, 40, 115, 350, 30, hWnd, (HMENU)IDC_EDIT_CUSTOM_URL);
-    SendMessage(g_hEditCustomUrl, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    g_hEditCustomUrl = CreateModernTextBox(1, hWnd, L"", 40, 115, 350, 30, (HMENU)IDC_EDIT_CUSTOM_URL, 0);
     ShowWindow(g_hEditCustomUrl, SW_HIDE);
     
     CreateLabel(1, hWnd, L"Auth Key:", 40, 155, 150, 20, g_hFontNormal);
-    g_hEditAuthKey = CreateCtrl(1, L"EDIT", g_lonelithAuthKey.c_str(), WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | ES_PASSWORD, 40, 180, 350, 30, hWnd, (HMENU)IDC_EDIT_AUTH_KEY);
-    SendMessage(g_hEditAuthKey, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    g_hEditAuthKey = CreateModernTextBox(1, hWnd, g_lonelithAuthKey.c_str(), 40, 180, 350, 30, (HMENU)IDC_EDIT_AUTH_KEY, ES_PASSWORD);
     
     HWND hBtnSaveKey = CreateCtrl(1, L"BUTTON", L"💾 Kaydet", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 400, 180, 100, 30, hWnd, (HMENU)IDB_SAVE_AUTH_KEY);
     SetModernStyle(hBtnSaveKey);
@@ -2012,8 +2115,7 @@ void CreateUI(HWND hWnd)
     CreateLabel(2, hWnd, L"Ayarlar", 40, 10, 200, 40, g_hFontTitle);
     
     CreateLabel(2, hWnd, L"📂 Hedef Klasör:", 40, 60, 200, 25, g_hFontSubtitle);
-    g_hPathDisplay = CreateCtrl(2, L"EDIT", g_targetPath.c_str(), WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_READONLY | WS_BORDER, 40, 90, 450, 30, hWnd, (HMENU)IDC_EDIT_PATH);
-    SendMessage(g_hPathDisplay, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    g_hPathDisplay = CreateModernTextBox(2, hWnd, g_targetPath.c_str(), 40, 90, 450, 30, (HMENU)IDC_EDIT_PATH, ES_READONLY);
 
     HWND hBtnChange = CreateCtrl(2, L"BUTTON", L"Değiştir", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 500, 90, 100, 30, hWnd, (HMENU)IDB_SELECT_FOLDER);
     SetModernStyle(hBtnChange);
@@ -2038,13 +2140,11 @@ void CreateUI(HWND hWnd)
     int secX = 350;
     CreateLabel(2, hWnd, L"Güvenlik", 40 + secX, 140, 200, 25, g_hFontSubtitle);
     CreateLabel(2, hWnd, L"Erişim Parolası:", 40 + secX, 170, 150, 20, g_hFontNormal);
-    g_hEditPassword = CreateCtrl(2, L"EDIT", g_appPassword.c_str(), WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, 40 + secX, 195, 180, 30, hWnd, (HMENU)IDC_EDIT_PASSWORD);
-    SendMessage(g_hEditPassword, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    g_hEditPassword = CreateModernTextBox(2, hWnd, g_appPassword.c_str(), 40 + secX, 195, 180, 30, (HMENU)IDC_EDIT_PASSWORD, 0);
     CreateLabel(2, hWnd, L"(Hatalı girişte imha tetiklenir)", 40 + secX, 230, 220, 20, g_hFontSmall);
 
     CreateLabel(2, hWnd, L"Varsayılan Yedekleme Yolu:", 40, 310, 300, 25, g_hFontSubtitle);
-    g_hEditDefaultPath = CreateCtrl(2, L"EDIT", g_targetPath.c_str(), WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_READONLY | WS_BORDER, 40, 340, 450, 30, hWnd, (HMENU)IDC_EDIT_PATH);
-    SendMessage(g_hEditDefaultPath, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    g_hEditDefaultPath = CreateModernTextBox(2, hWnd, g_targetPath.c_str(), 40, 340, 450, 30, (HMENU)IDC_EDIT_PATH, ES_READONLY);
 
     HWND hBtnSave = CreateCtrl(2, L"BUTTON", L"💾  Ayarları Kaydet", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 40, 390, 180, 40, hWnd, (HMENU)IDB_SAVE_SETTINGS);
     SetModernStyle(hBtnSave);
@@ -2076,8 +2176,7 @@ void CreateUI(HWND hWnd)
     SendMessage(g_hComboProgressMode, CB_SETCURSEL, g_progressBarMode, 0);
     
     CreateLabel(4, hWnd, L"Özel yüzde değeri:", 40, 160, 150, 20, g_hFontNormal);
-    g_hEditProgressCustom = CreateCtrl(4, L"EDIT", std::to_wstring(g_customProgressValue).c_str(), WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER, 200, 157, 90, 25, hWnd, (HMENU)IDC_EDIT_PROGRESS_CUSTOM);
-    SendMessage(g_hEditProgressCustom, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    g_hEditProgressCustom = CreateModernTextBox(4, hWnd, std::to_wstring(g_customProgressValue).c_str(), 200, 157, 90, 25, (HMENU)IDC_EDIT_PROGRESS_CUSTOM, ES_NUMBER);
     EnableWindow(g_hEditProgressCustom, g_progressBarMode == 3);
     
     CreateLabel(4, hWnd, L"(Sadece Custom seçiliyken aktif)", 40, 190, 250, 20, g_hFontSmall);
@@ -3256,6 +3355,15 @@ void ApplyTheme() {
     // Update theme toggle button text
     if (g_hThemeToggleBtn) {
         SetWindowTextW(g_hThemeToggleBtn, g_isDarkMode ? L"☀️ Light Mode" : L"🌙 Dark Mode");
+    }
+    
+    // Reapply acrylic effect with new theme colors
+    if (g_hMainWindow) {
+        EnableAcrylicEffect(g_hMainWindow);
+        
+        // Update title bar theme
+        BOOL dark = g_isDarkMode ? TRUE : FALSE;
+        DwmSetWindowAttribute(g_hMainWindow, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
     }
     
     // Force complete window redraw
