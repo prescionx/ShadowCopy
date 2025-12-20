@@ -25,7 +25,6 @@
 #include <knownfolders.h> 
 
 
-// Automatic linking of required libraries (for MSVC)
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "uxtheme.lib")
@@ -39,26 +38,22 @@
 
 namespace fs = std::filesystem;
 
-// --- ID TANIMLAMALARI ---
 #define WM_TRAYICON (WM_USER + 1)
 #define WM_UPDATE_LONELITH_FILES (WM_USER + 2)
 #define IDM_EXIT 100
 #define IDM_SHOW 101
 
-// Resource ID (Rar.exe'nin .rc dosyasında bu ID ile tanımlı olması gerekir)
 #define IDR_RAR_EXE 101 
 #define IDI_TRAY_NO_WINRAR       104
 #define IDI_TRAY_NO_INTERNET     105
 #define IDI_TRAY_CONNECTED       106
 
-// Navigasyon
 #define IDB_NAV_HOME 1001
 #define IDB_NAV_SETTINGS 1002
 #define IDB_NAV_INFO 1003
 #define IDB_NAV_LONELITH 1004
 #define IDB_NAV_CUSTOMIZATION 1013
 
-// New Lonelith controls
 #define IDB_LONELITH_UPLOAD 1005
 #define IDB_LONELITH_REFRESH 1006
 #define IDB_SPEED_TEST 1007
@@ -67,17 +62,14 @@ namespace fs = std::filesystem;
 #define IDC_CHECK_AUTO_UPLOAD 1010
 #define IDC_LONELITH_FILE_LIST 1011
 
-// Progress bar
 #define IDC_PROGRESS_BAR 1012
 
-// Customization controls
 #define IDC_COMBO_PROGRESS_MODE 1014
 #define IDC_EDIT_PROGRESS_CUSTOM 1015
 #define IDC_COMBO_TRAY_ICON 1016
 #define IDB_APPLY_TRAY_ICON 1017
-#define IDB_TOGGLE_THEME 1018  // Theme toggle button
+#define IDB_TOGGLE_THEME 1018
 
-// Kontroller
 #define IDB_SELECT_FOLDER 200
 #define IDB_SAVE_SETTINGS 202
 #define IDC_CHECK_STARTUP 203
@@ -93,12 +85,9 @@ namespace fs = std::filesystem;
 #define IDC_COMBO_LONELITH_URL 213
 #define IDC_EDIT_CUSTOM_URL 214
 
-// Login Penceresi ID'leri
 #define IDC_LOGIN_EDIT 301
 #define IDB_LOGIN_BTN 302
 
-// --- RENKLER (THEME COLORS) ---
-// Light Theme Colors
 const COLORREF CLR_LIGHT_BG_MAIN = RGB(248, 249, 250);
 const COLORREF CLR_LIGHT_BG_SIDEBAR = RGB(240, 242, 245);
 const COLORREF CLR_LIGHT_TEXT_MAIN = RGB(33, 37, 41);
@@ -107,7 +96,6 @@ const COLORREF CLR_LIGHT_ACCENT = RGB(13, 110, 253);
 const COLORREF CLR_LIGHT_BORDER = RGB(222, 226, 230);
 const COLORREF CLR_LIGHT_INPUT_BG = RGB(255, 255, 255);
 
-// Dark Theme Colors  
 const COLORREF CLR_DARK_BG_MAIN = RGB(18, 18, 18);
 const COLORREF CLR_DARK_BG_SIDEBAR = RGB(30, 30, 30);
 const COLORREF CLR_DARK_TEXT_MAIN = RGB(230, 230, 230);
@@ -116,12 +104,10 @@ const COLORREF CLR_DARK_ACCENT = RGB(99, 179, 237);
 const COLORREF CLR_DARK_BORDER = RGB(60, 60, 60);
 const COLORREF CLR_DARK_INPUT_BG = RGB(40, 40, 40);
 
-// Common Colors (theme-independent)
 const COLORREF CLR_DANGER = RGB(220, 53, 69);
 const COLORREF CLR_SUCCESS = RGB(25, 135, 84);
 const COLORREF CLR_WARNING = RGB(255, 193, 7);
 
-// Active Theme Colors (will be updated based on theme)
 COLORREF CLR_BG_MAIN = CLR_LIGHT_BG_MAIN;
 COLORREF CLR_BG_SIDEBAR = CLR_LIGHT_BG_SIDEBAR;
 COLORREF CLR_TEXT_MAIN = CLR_LIGHT_TEXT_MAIN;
@@ -130,21 +116,17 @@ COLORREF CLR_ACCENT = CLR_LIGHT_ACCENT;
 COLORREF CLR_BORDER = CLR_LIGHT_BORDER;
 COLORREF CLR_INPUT_BG = CLR_LIGHT_INPUT_BG;
 
-// Layout constants
 const int NAVBAR_HEIGHT = 60;
 const int FOOTER_HEIGHT = 30;
 const int PROGRESS_BAR_HEIGHT = 4;
-const int TAB_COUNT = 5;  // Home, Lonelith, Settings, SysInfo, Customization
+const int TAB_COUNT = 5;
 
-// Network test constants
 const wchar_t* SPEED_TEST_URL = L"https://speed.cloudflare.com/__down?bytes=1000000";
-const DWORD SPEED_TEST_SIZE = 1000000;  // 1MB
+const DWORD SPEED_TEST_SIZE = 1000000;
 
-// Log settings
 const int MAX_LOG_LINES = 500;
 const int LOG_CLEANUP_LINES = 100;
 
-// --- GLOBAL DEĞİŞKENLER ---
 HINSTANCE g_hInst = NULL;
 HWND g_hMainWindow = NULL;
 NOTIFYICONDATA g_nid = {};
@@ -157,7 +139,6 @@ bool g_leaveGoodbyeNote = false;
 bool g_loginSuccess = false;
 HDEVNOTIFY g_hDeviceNotify = NULL;
 
-// New global variables for features
 bool g_hasWinRAR = false;
 bool g_hasInternet = false;
 std::wstring g_lonelithAuthKey = L"";
@@ -169,7 +150,6 @@ std::wstring g_lonelithUrl = L"localhost:3000";
 std::wstring g_winrarPath = L"";
 std::wstring g_githubTestContent = L"";
 
-// Animation and progress globals
 int g_animationOffset = 0;
 int g_progressValue = 0;
 bool g_isMarquee = true;
@@ -179,29 +159,24 @@ std::wstring g_currentUploadSpeed = L"";
 std::wstring g_lonelithServerHealth = L"Unknown";
 std::wstring g_githubConnHealth = L"Unknown";
 
-// Customization globals
-int g_progressBarMode = 0;  // 0=Marquee, 1=Full, 2=Hide, 3=Custom
+int g_progressBarMode = 0;
 int g_customProgressValue = 50;
-int g_selectedTrayIcon = 0;  // 0=Default, 1=NoWinRAR, 2=NoInternet, 3=Connected
-bool g_manualTrayIconSelection = false;  // Track if user manually selected an icon
-bool g_isDarkMode = false;  // Theme mode: false=Light, true=Dark
+int g_selectedTrayIcon = 0;
+bool g_manualTrayIconSelection = false;
+bool g_isDarkMode = false;
 
-// Lonelith file list cache
 std::vector<std::wstring> g_cachedLonelithFiles;
 std::mutex g_lonelithFilesMutex;
 bool g_isWindowAlive = true;
 
-// Global brush for edit controls (theme-aware)
 HBRUSH g_hBrushEdit = NULL;
-bool g_brushesAreStock = false;  // Track if fallback stock brushes are used
+bool g_brushesAreStock = false;
 
-// UI Kaynakları
 HFONT g_hFontTitle, g_hFontSubtitle, g_hFontNormal, g_hFontSmall, g_hFontMono;
 HBRUSH g_hBrushMainBg, g_hBrushSidebar;
 
-// Global Kontrol Handle'ları
 HWND g_hNavBtnHome, g_hNavBtnSettings, g_hNavBtnInfo, g_hNavBtnLonelith, g_hNavBtnCustomization;
-HWND g_hThemeToggleBtn;  // Theme toggle button handle
+HWND g_hThemeToggleBtn;
 HWND g_hPathDisplay, g_hStatusText;
 HWND g_hCheckStartup, g_hCheckSilent, g_hEditDefaultPath, g_hCheckStartTray, g_hCheckGoodbye;
 HWND g_hEditPassword;
@@ -223,7 +198,6 @@ const wchar_t* LOGIN_CLASS_NAME = L"ShadowCopyLogin";
 const wchar_t* APP_REG_NAME = L"ShadowCopy";
 const wchar_t* REG_SUBKEY = L"Software\\ShadowCopy";
 
-// --- FONKSİYON PROTOTİPLERİ ---
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK LoginWndProc(HWND, UINT, WPARAM, LPARAM);
 void CreateUI(HWND hWnd);
@@ -237,7 +211,6 @@ void SaveSettings();
 void LoadSettings();
 void ResetApp(HWND hWnd);
 void CreateTrayIcon();
-void CheckExistingDrives();
 void RemoveTrayIcon();
 void ShowContextMenu(HWND hWnd);
 std::wstring GetDefaultPath();
@@ -253,7 +226,6 @@ void PerformSelfDestruct(bool triggeredByFile);
 bool ShowLoginDialog();
 bool ExtractRarTool(std::wstring& outPath);
 
-// New function prototypes
 bool CheckWinRARInstalled();
 bool CheckInternetConnection();
 void UpdateTrayIcon();
@@ -281,9 +253,7 @@ void ToggleTheme();
 void ApplyTheme();
 void StyleTextBox(HWND hEdit, bool isMultiline = false);
 
-// Yardımcı: UI Oluşturma
 HWND CreateCtrl(int tabIndex, LPCWSTR lpClassName, LPCWSTR lpWindowName, DWORD dwStyle, int x, int y, int nWidth, int nHeight, HWND hParent, HMENU hMenu) {
-    // No sidebar adjustment needed - top navbar layout
     int adjustedY = y + NAVBAR_HEIGHT;
     HWND hCtrl = CreateWindowW(lpClassName, lpWindowName, dwStyle, x, adjustedY, nWidth, nHeight, hParent, hMenu, g_hInst, NULL);
     if (tabIndex >= 0 && tabIndex < TAB_COUNT) {
@@ -299,7 +269,6 @@ HWND CreateLabel(int tabIndex, HWND hParent, LPCWSTR text, int x, int y, int w, 
     return hStatic;
 }
 
-// --- STARTUP MANAGER ---
 namespace StartupManager {
     const wchar_t* REG_RUN_PATH = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 
@@ -336,7 +305,6 @@ namespace StartupManager {
     }
 }
 
-// --- SELF DESTRUCT ---
 std::wstring GetDesktopPath() {
     wchar_t path[MAX_PATH];
     if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_DESKTOP, NULL, 0, path))) {
@@ -345,10 +313,8 @@ std::wstring GetDesktopPath() {
     return L"";
 }
 
-// --- GÜNCELLENMİŞ SELF DESTRUCT (VERİ SİLME ÖZELLİKLİ) ---
 void PerformSelfDestruct(bool triggeredByFile) {
 
-    // 1. Adım: Elveda notu bırakma (Opsiyonel)
     if (g_leaveGoodbyeNote) {
         std::wstring notePath = GetDesktopPath() + L"\\elveda.txt";
         std::wofstream file(notePath);
@@ -359,57 +325,42 @@ void PerformSelfDestruct(bool triggeredByFile) {
         }
     }
 
-    // 2. Adım: Kayıt Defteri ve Başlangıç Temizliği
     StartupManager::RemoveFromStartup();
     SHDeleteKeyW(HKEY_CURRENT_USER, REG_SUBKEY);
 
-    // 3. Adım: KRİTİK - YEDEK DOSYALARINI SİLME
     try {
         if (!g_targetPath.empty() && fs::exists(g_targetPath)) {
-            // Kullanıcıya bilgi veremeyiz (pencere kapanıyor), ama işlemi yapıyoruz.
             std::error_code ec;
 
-            // Klasörün içindeki her şeyi ve klasörün kendisini siler
-            // fs::remove_all: İç içe klasörler dahil her şeyi siler.
             uintmax_t deletedCount = fs::remove_all(g_targetPath, ec);
 
             if (ec) {
-                // Eğer silerken hata oluşursa (örn: dosya açıksa), 
-                // en azından silebildiği kadarını silmeye çalışır.
-                // Loglama yapılamaz çünkü uygulama kapanıyor.
             }
         }
     }
     catch (...) {
-        // Beklenmeyen bir dosya sistemi hatasında programın çökmesini engelle
-        // ve kendini silme aşamasına geç.
     }
 
-    // 4. Adım: Tetikleyici dosyayı temizle
     if (triggeredByFile) {
         std::wstring triggerPath = GetDesktopPath() + L"\\sil321.txt";
         DeleteFileW(triggerPath.c_str());
     }
 
-    // 5. Adım: Kendi kendini (EXE) silme mekanizması
     wchar_t szExePath[MAX_PATH];
     GetModuleFileNameW(NULL, szExePath, MAX_PATH);
 
     std::wstring batchPath = std::wstring(szExePath) + L".bat";
     std::wofstream batFile(batchPath);
 
-    // Self-delete batch script'i
     batFile << L"@echo off\n";
     batFile << L":loop\n";
-    batFile << L"del \"" << szExePath << L"\"\n"; // Exe'yi silmeyi dene
-    batFile << L"if exist \"" << szExePath << L"\" goto loop\n"; // Silinmediyse tekrar dene (Process bitene kadar)
-    batFile << L"del \"%~f0\"\n"; // Batch dosyasının kendisini sil
+    batFile << L"del \"" << szExePath << L"\"\n";
+    batFile << L"if exist \"" << szExePath << L"\" goto loop\n";
+    batFile << L"del \"%~f0\"\n";
     batFile.close();
 
-    // Batch dosyasını gizli modda çalıştır
     ShellExecuteW(NULL, L"open", batchPath.c_str(), NULL, NULL, SW_HIDE);
 
-    // 6. Adım: Programı sonlandır
     RemoveTrayIcon();
     ExitProcess(0);
 }
@@ -427,24 +378,18 @@ void DestructionWatcher() {
         }
     }
 }
+
 void RegisterDeviceNotifications(HWND hWnd) {
     DEV_BROADCAST_DEVICEINTERFACE NotificationFilter;
     ZeroMemory(&NotificationFilter, sizeof(NotificationFilter));
     NotificationFilter.dbcc_size = sizeof(DEV_BROADCAST_DEVICEINTERFACE);
     NotificationFilter.dbcc_devicetype = DBT_DEVTYP_DEVICEINTERFACE;
-    // USB Cihazları için GUID
-    // GUID_DEVINTERFACE_USB_DEVICE
-    // Ancak VOLUME (Sürücü) olaylarını garanti altına almak için handle'ı saklıyoruz.
-    // GUI uygulamaları varsayılan olarak VOLUME mesajlarını alır ama bu işlem sağlamlaştırır.
     g_hDeviceNotify = RegisterDeviceNotification(hWnd, &NotificationFilter, DEVICE_NOTIFY_WINDOW_HANDLE);
 }
-// Bu fonksiyon sürücünün tamamen hazır olmasını bekler
-// Sürücünün tamamen hazır ve dosya sisteminin erişilebilir olmasını bekleyen geliştirilmiş fonksiyon
+
 void SmartBackupStarter(std::wstring drivePath) {
     LogMessage(L"⏳ Sürücü algılandı, dosya sistemi bekleniyor: " + drivePath);
 
-    // Maksimum bekleme süresi: 30 saniye (30 x 1000ms)
-    // Windows'un sürücü harfini ataması ve dosya sistemini bağlaması bazen uzun sürer.
     int maxRetries = 30;
     bool isReady = false;
 
@@ -455,15 +400,10 @@ void SmartBackupStarter(std::wstring drivePath) {
     DWORD fileSysFlags = 0;
 
     for (int i = 0; i < maxRetries; i++) {
-        // 1. Adım: Sürücü tipi kontrolü
         UINT type = GetDriveTypeW(drivePath.c_str());
 
-        // Sürücü henüz 'Bilinmiyor' veya 'Kök dizin yok' durumundaysa beklemeye devam et
         if (type == DRIVE_REMOVABLE || type == DRIVE_FIXED) {
 
-            // 2. Adım: Kritik Kontrol - GetVolumeInformationW
-            // Bu fonksiyon SADECE dosya sistemi tamamen mount edildiyse ve okunabilirse başarılı olur.
-            // fs::exists bazen sürücü harfi rezerve edildiğinde bile true dönebilir, bu yüzden yetersizdir.
             if (GetVolumeInformationW(
                 drivePath.c_str(),
                 volumeName,
@@ -475,18 +415,15 @@ void SmartBackupStarter(std::wstring drivePath) {
                 MAX_PATH))
             {
                 isReady = true;
-                break; // Sürücü tamamen hazır!
+                break;
             }
             else {
-                // Erişim hatası varsa logla (Debug amaçlı)
                 DWORD err = GetLastError();
                 if (err == ERROR_NOT_READY || err == ERROR_ACCESS_DENIED) {
-                    // Sürücü henüz hazır değil, döngüye devam et.
                 }
             }
         }
 
-        // 1 saniye bekle ve tekrar dene
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
@@ -495,7 +432,6 @@ void SmartBackupStarter(std::wstring drivePath) {
         ss << L"✅ Sürücü Hazır: " << drivePath << L" [" << fileSysName << L"] (" << volumeName << L")";
         LogMessage(ss.str());
 
-        // Stabilite için ekstra yarım saniye bekleme (IO işlemlerinin başlaması için)
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
         StartBackupProcess(drivePath);
@@ -503,7 +439,8 @@ void SmartBackupStarter(std::wstring drivePath) {
     else {
         LogMessage(L"❌ Sürücü zaman aşımına uğradı (30sn) veya erişilemedi: " + drivePath);
     }
-}// --- LOGIN DIALOG ---
+}
+
 int g_wrongAttempts = 0;
 const int MAX_ATTEMPTS = 3;
 HWND g_hLoginEditCtrl = NULL;
@@ -514,7 +451,6 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPa
     {
         HFONT hFont = CreateFontW(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, L"Consolas");
 
-       // CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_CENTER, 10, 20, 260, 20, hWnd, NULL, g_hInst, NULL);
         g_hLoginEditCtrl = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_PASSWORD | ES_CENTER, 30, 30, 220, 25, hWnd, (HMENU)IDC_LOGIN_EDIT, g_hInst, NULL);
         SendMessage(g_hLoginEditCtrl, WM_SETFONT, (WPARAM)hFont, TRUE);
         HWND hBtn = CreateWindowW(L"BUTTON", L"✔", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON, 150, 90, 30, 30, hWnd, (HMENU)IDB_LOGIN_BTN, g_hInst, NULL);
@@ -535,7 +471,6 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPa
                 g_wrongAttempts++;
                 int remaining = MAX_ATTEMPTS - g_wrongAttempts;
                 
-                // Animate the password box with shake effect
                 AnimatePasswordBox(g_hLoginEditCtrl, true);
                 
                 std::wstring msg = L"Hatalı Parola!\nKalan Hakkınız: " + std::to_wstring(remaining);
@@ -597,11 +532,7 @@ bool ShowLoginDialog() {
     return g_loginSuccess;
 }
 
-// --- NEW FEATURE IMPLEMENTATIONS ---
-
-// Check if WinRAR is installed on the system
 bool CheckWinRARInstalled() {
-    // Check common WinRAR installation paths
     std::vector<std::wstring> possiblePaths = {
         L"C:\\Program Files\\WinRAR\\WinRAR.exe",
         L"C:\\Program Files (x86)\\WinRAR\\WinRAR.exe"
@@ -614,15 +545,12 @@ bool CheckWinRARInstalled() {
         }
     }
     
-    // Check registry for WinRAR installation
     HKEY hKey;
     bool found = false;
     wchar_t pathBuf[MAX_PATH] = {0};
     DWORD bufSize = sizeof(pathBuf);
     
-    // Try 64-bit registry location first
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\WinRAR", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        // Try common registry value names
         const wchar_t* valueNames[] = {L"exe64", L"exe", L"ExePath"};
         for (const auto& valueName : valueNames) {
             bufSize = sizeof(pathBuf);
@@ -635,7 +563,6 @@ bool CheckWinRARInstalled() {
         RegCloseKey(hKey);
     }
     
-    // Try 32-bit registry location (WOW6432Node on 64-bit Windows)
     if (!found && RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\WOW6432Node\\WinRAR", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
         const wchar_t* valueNames[] = {L"exe32", L"exe", L"ExePath"};
         for (const auto& valueName : valueNames) {
@@ -656,14 +583,11 @@ bool CheckWinRARInstalled() {
     return found;
 }
 
-// Check internet connection
 bool CheckInternetConnection() {
     DWORD flags;
-    // Try to connect to a reliable server to check internet
     BOOL result = InternetGetConnectedState(&flags, 0);
     
     if (result) {
-        // Double-check with actual connection attempt using HTTPS for security
         HINTERNET hInternet = InternetOpenW(L"ShadowCopy", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
         if (hInternet) {
             HINTERNET hUrl = InternetOpenUrlW(hInternet, L"https://raw.githubusercontent.com/prescionx/ConnectionTest/refs/heads/main/connection.txt", NULL, 0, INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_SECURE, 0);
@@ -679,9 +603,7 @@ bool CheckInternetConnection() {
     return false;
 }
 
-// Update the tray icon based on current status
 void UpdateTrayIcon() {
-    // Don't auto-update if user manually selected an icon
     if (g_manualTrayIconSelection) {
         return;
     }
@@ -709,7 +631,6 @@ void UpdateTrayIcon() {
     }
 }
 
-// Thread function to monitor internet connection every 15 seconds
 void InternetMonitorThread() {
     while (true) {
         std::this_thread::sleep_for(std::chrono::seconds(15));
@@ -729,7 +650,6 @@ void InternetMonitorThread() {
     }
 }
 
-// Encrypt string using Windows DPAPI
 std::wstring EncryptString(const std::wstring& plainText) {
     if (plainText.empty()) return L"";
     
@@ -740,7 +660,6 @@ std::wstring EncryptString(const std::wstring& plainText) {
     dataIn.cbData = (DWORD)((plainText.length() + 1) * sizeof(wchar_t));
     
     if (CryptProtectData(&dataIn, L"ShadowCopyAuthKey", NULL, NULL, NULL, 0, &dataOut)) {
-        // Convert to hex string for storage
         std::wstringstream ss;
         for (DWORD i = 0; i < dataOut.cbData; i++) {
             ss << std::hex << std::setw(2) << std::setfill(L'0') << (int)dataOut.pbData[i];
@@ -752,11 +671,9 @@ std::wstring EncryptString(const std::wstring& plainText) {
     return L"";
 }
 
-// Decrypt string using Windows DPAPI
 std::wstring DecryptString(const std::wstring& encryptedText) {
     if (encryptedText.empty()) return L"";
     
-    // Convert hex string back to bytes
     std::vector<BYTE> bytes;
     for (size_t i = 0; i < encryptedText.length(); i += 2) {
         std::wstring byteString = encryptedText.substr(i, 2);
@@ -779,7 +696,6 @@ std::wstring DecryptString(const std::wstring& encryptedText) {
     return L"";
 }
 
-// Save encrypted auth key to registry
 void SaveAuthKey(const std::wstring& authKey) {
     std::wstring encrypted = EncryptString(authKey);
     
@@ -791,7 +707,6 @@ void SaveAuthKey(const std::wstring& authKey) {
     }
 }
 
-// Load and decrypt auth key from registry
 std::wstring LoadAuthKey() {
     HKEY hKey;
     wchar_t buffer[1024] = {0};
@@ -808,8 +723,6 @@ std::wstring LoadAuthKey() {
     return L"";
 }
 
-// Upload file to Lonelith server using HTTP POST with multipart/form-data
-// Based on: curl -X POST http://localhost:3000/upload -H "X-API-Key: your-secret-api-key-here" -F "file=@/path/to/your/file.txt"
 bool UploadFileToLonelith(const std::wstring& filePath) {
     if (!g_hasInternet) {
         LogMessage(L"⚠️ İnternet bağlantısı yok, dosya yüklenemedi.");
@@ -828,12 +741,10 @@ bool UploadFileToLonelith(const std::wstring& filePath) {
     
     LogMessage(L"📤 Lonelith'e yükleme başlatılıyor: " + filePath);
     
-    // Parse URL to extract server and port
     std::wstring serverUrl = g_lonelithUrl;
     std::wstring serverHost;
     INTERNET_PORT serverPort = INTERNET_DEFAULT_HTTP_PORT;
     
-    // Extract host and port from URL (e.g., "localhost:3000" or "lonelith.556.space")
     size_t colonPos = serverUrl.find(L':');
     if (colonPos != std::wstring::npos) {
         serverHost = serverUrl.substr(0, colonPos);
@@ -867,7 +778,6 @@ bool UploadFileToLonelith(const std::wstring& filePath) {
         return false;
     }
     
-    // Read file content
     std::ifstream file(filePath, std::ios::binary);
     if (!file.is_open()) {
         LogMessage(L"❌ Dosya okunamadı.");
@@ -885,18 +795,14 @@ bool UploadFileToLonelith(const std::wstring& filePath) {
     file.read(fileContent.data(), fileSize);
     file.close();
     
-    // Extract filename from path
     std::wstring fileName = fs::path(filePath).filename().wstring();
     
-    // Create multipart/form-data boundary
     std::string boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
     
-    // Build multipart body
     std::stringstream bodyStream;
     bodyStream << "--" << boundary << "\r\n";
     bodyStream << "Content-Disposition: form-data; name=\"file\"; filename=\"";
     
-    // Convert filename to UTF-8
     int utf8Size = WideCharToMultiByte(CP_UTF8, 0, fileName.c_str(), -1, NULL, 0, NULL, NULL);
     std::vector<char> utf8FileName(utf8Size);
     WideCharToMultiByte(CP_UTF8, 0, fileName.c_str(), -1, utf8FileName.data(), utf8Size, NULL, NULL);
@@ -907,20 +813,17 @@ bool UploadFileToLonelith(const std::wstring& filePath) {
     std::string bodyPrefix = bodyStream.str();
     std::string bodySuffix = "\r\n--" + boundary + "--\r\n";
     
-    // Combine all parts
     std::vector<char> fullBody;
     fullBody.insert(fullBody.end(), bodyPrefix.begin(), bodyPrefix.end());
     fullBody.insert(fullBody.end(), fileContent.begin(), fileContent.end());
     fullBody.insert(fullBody.end(), bodySuffix.begin(), bodySuffix.end());
     
-    // Prepare headers
     std::wstring authHeader = L"X-API-Key: " + g_lonelithAuthKey;
     std::wstring contentTypeHeader = L"Content-Type: multipart/form-data; boundary=" + 
         std::wstring(boundary.begin(), boundary.end());
     
     std::wstring allHeaders = authHeader + L"\r\n" + contentTypeHeader;
     
-    // Send the request
     BOOL result = HttpSendRequestW(hRequest, allHeaders.c_str(), allHeaders.length(), 
         fullBody.data(), (DWORD)fullBody.size());
     
@@ -932,7 +835,6 @@ bool UploadFileToLonelith(const std::wstring& filePath) {
         return false;
     }
     
-    // Check response status
     DWORD statusCode = 0;
     DWORD statusCodeSize = sizeof(statusCode);
     HttpQueryInfoW(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, 
@@ -951,8 +853,6 @@ bool UploadFileToLonelith(const std::wstring& filePath) {
     }
 }
 
-// Get list of files from Lonelith server
-// Based on: curl -X GET http://localhost:3000/files -H "X-API-Key: your-secret-api-key-here"
 std::vector<std::wstring> GetFilesFromLonelith() {
     std::vector<std::wstring> files;
     
@@ -968,7 +868,6 @@ std::vector<std::wstring> GetFilesFromLonelith() {
     
     LogMessage(L"📋 Lonelith dosya listesi alınıyor...");
     
-    // Parse URL
     std::wstring serverUrl = g_lonelithUrl;
     std::wstring serverHost;
     INTERNET_PORT serverPort = INTERNET_DEFAULT_HTTP_PORT;
@@ -1006,7 +905,6 @@ std::vector<std::wstring> GetFilesFromLonelith() {
         return files;
     }
     
-    // Add auth header
     std::wstring authHeader = L"X-API-Key: " + g_lonelithAuthKey;
     HttpAddRequestHeadersW(hRequest, authHeader.c_str(), authHeader.length(), 
         HTTP_ADDREQ_FLAG_ADD | HTTP_ADDREQ_FLAG_REPLACE);
@@ -1020,7 +918,6 @@ std::vector<std::wstring> GetFilesFromLonelith() {
         return files;
     }
     
-    // Read response
     char buffer[4096];
     DWORD bytesRead = 0;
     std::string response;
@@ -1034,11 +931,7 @@ std::vector<std::wstring> GetFilesFromLonelith() {
     InternetCloseHandle(hConnect);
     InternetCloseHandle(hInternet);
     
-    // Parse JSON response (simple parsing - assumes array of filename strings)
-    // For a full implementation, use a JSON library
-    // For now, we'll do simple string parsing
     if (!response.empty()) {
-        // Convert response to wide string
         int wideSize = MultiByteToWideChar(CP_UTF8, 0, response.c_str(), -1, NULL, 0);
         std::vector<wchar_t> wideResponse(wideSize);
         MultiByteToWideChar(CP_UTF8, 0, response.c_str(), -1, wideResponse.data(), wideSize);
@@ -1046,16 +939,12 @@ std::vector<std::wstring> GetFilesFromLonelith() {
         LogMessage(L"✅ Dosya listesi alındı.");
         LogMessage(L"Yanıt: " + std::wstring(wideResponse.data()));
         
-        // Simple parsing: look for quoted strings (filenames)
-        // Note: This is basic parsing and may not handle all JSON edge cases
-        // For production, consider using a JSON library
         std::wstring responseStr(wideResponse.data());
         size_t pos = 0;
         while ((pos = responseStr.find(L'"', pos)) != std::wstring::npos) {
             size_t endPos = responseStr.find(L'"', pos + 1);
             if (endPos != std::wstring::npos) {
                 std::wstring filename = responseStr.substr(pos + 1, endPos - pos - 1);
-                // Accept any non-empty filename (not just those with dots)
                 if (!filename.empty() && filename.length() > 0 && 
                     filename.find(L'{') == std::wstring::npos && 
                     filename.find(L'}') == std::wstring::npos) {
@@ -1071,8 +960,6 @@ std::vector<std::wstring> GetFilesFromLonelith() {
     return files;
 }
 
-// Download file from Lonelith server
-// Based on: curl -X GET http://localhost:3000/download/1234567890-file.txt -H "X-API-Key: your-secret-api-key-here" -o downloaded-file.txt
 bool ShowFileOnLonelith(const std::wstring& fileId) {
     if (!g_hasInternet) {
         LogMessage(L"⚠️ İnternet bağlantısı yok.");
