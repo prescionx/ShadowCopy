@@ -1713,7 +1713,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     }
 
     // Apply dark mode to title bar if in dark theme
-    BOOL dark = g_isDarkMode ? TRUE : FALSE;
+    BOOL dark = (BOOL)g_isDarkMode;
     DwmSetWindowAttribute(g_hMainWindow, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
 
     CreateUI(g_hMainWindow);
@@ -1915,6 +1915,8 @@ void EnableAcrylicEffect(HWND hWnd) {
     osvi.dwMinorVersion = 0;
     osvi.dwBuildNumber = 17134; // Windows 10 1803
     
+    bool acrylicApplied = false;
+    
     // Try modern acrylic effect first (Windows 10 1803+)
     if (VerifyVersionInfoW(&osvi, VER_MAJORVERSION | VER_MINORVERSION | VER_BUILDNUMBER, dwlConditionMask)) {
         // Use ACCENT_ENABLE_ACRYLICBLURBEHIND for modern acrylic effect
@@ -1940,12 +1942,13 @@ void EnableAcrylicEffect(HWND hWnd) {
         accent.nFlags = 2; // Enable gradient
         
         // Set tint color with alpha (format: 0xAABBGGRR)
+        // Alpha: 0xCC = 204/255 = ~80% opacity
         if (g_isDarkMode) {
             // Dark theme: dark tint with high transparency
-            accent.nColor = 0xCC1E1E1E; // 80% opacity dark gray
+            accent.nColor = (204 << 24) | 0x1E1E1E; // Alpha 204 (80% opacity), dark gray
         } else {
             // Light theme: light tint with transparency
-            accent.nColor = 0xCCF5F5F5; // 80% opacity light gray
+            accent.nColor = (204 << 24) | 0xF5F5F5; // Alpha 204 (80% opacity), light gray
         }
         
         WINCOMPATTRDATA data = { 19, &accent, sizeof(accent) }; // WCA_ACCENT_POLICY = 19
@@ -1956,18 +1959,20 @@ void EnableAcrylicEffect(HWND hWnd) {
             pSetWindowCompositionAttribute SetWindowCompositionAttribute =
                 (pSetWindowCompositionAttribute)GetProcAddress(hUser32, "SetWindowCompositionAttribute");
             if (SetWindowCompositionAttribute) {
-                SetWindowCompositionAttribute(hWnd, &data);
+                acrylicApplied = SetWindowCompositionAttribute(hWnd, &data);
             }
         }
     }
     
-    // Fallback: Use DWM blur-behind effect for older Windows 10 versions
-    DWM_BLURBEHIND bb = { 0 };
-    bb.dwFlags = DWM_BB_ENABLE | DWM_BB_BLURREGION;
-    bb.fEnable = TRUE;
-    bb.hRgnBlur = CreateRectRgn(0, 0, -1, -1); // Full window blur
-    DwmEnableBlurBehindWindow(hWnd, &bb);
-    if (bb.hRgnBlur) DeleteObject(bb.hRgnBlur);
+    // Fallback: Use DWM blur-behind effect only if acrylic failed
+    if (!acrylicApplied) {
+        DWM_BLURBEHIND bb = { 0 };
+        bb.dwFlags = DWM_BB_ENABLE | DWM_BB_BLURREGION;
+        bb.fEnable = TRUE;
+        bb.hRgnBlur = CreateRectRgn(0, 0, -1, -1); // Full window blur
+        DwmEnableBlurBehindWindow(hWnd, &bb);
+        if (bb.hRgnBlur) DeleteObject(bb.hRgnBlur);
+    }
     
     // Enable window composition for transparency
     MARGINS margins = { -1, -1, -1, -1 }; // Extend frame into entire window
@@ -1986,10 +1991,7 @@ HWND CreateModernTextBox(int tabIndex, HWND hParent, LPCWSTR defaultText, int x,
     // Add internal padding
     SendMessage(hEdit, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELONG(8, 8));
     
-    // Set background mode to transparent for better integration with acrylic
-    HDC hdc = GetDC(hEdit);
-    SetBkMode(hdc, TRANSPARENT);
-    ReleaseDC(hEdit, hdc);
+    // Note: Transparent background is handled in WM_CTLCOLOREDIT message processing
     
     return hEdit;
 }
@@ -3362,7 +3364,7 @@ void ApplyTheme() {
         EnableAcrylicEffect(g_hMainWindow);
         
         // Update title bar theme
-        BOOL dark = g_isDarkMode ? TRUE : FALSE;
+        BOOL dark = (BOOL)g_isDarkMode;
         DwmSetWindowAttribute(g_hMainWindow, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
     }
     
