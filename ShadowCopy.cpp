@@ -1904,16 +1904,9 @@ void CreateUI(HWND hWnd)
     btnX += btnW + 10;
     g_hNavBtnCustomization = CreateWindowW(L"BUTTON", L"🎨 Tema", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, btnX, 10, btnW, btnH, hWnd, (HMENU)IDB_NAV_CUSTOMIZATION, g_hInst, NULL);
     
-    // Add theme toggle button on the right side
+    // Create progress bar in footer
     RECT clientRect;
     GetClientRect(hWnd, &clientRect);
-    int themeToggleX = clientRect.right - 160;
-    g_hThemeToggleBtn = CreateWindowW(L"BUTTON", g_isDarkMode ? L"☀️ Light Mode" : L"🌙 Dark Mode", 
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, themeToggleX, 10, 140, 40, hWnd, (HMENU)IDB_TOGGLE_THEME, g_hInst, NULL);
-    SendMessage(g_hThemeToggleBtn, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
-    SetModernStyle(g_hThemeToggleBtn);
-
-    // Create progress bar in footer
     int footerY = clientRect.bottom - FOOTER_HEIGHT;
     g_hProgressBar = CreateWindowW(PROGRESS_CLASSW, NULL, 
         WS_CHILD | WS_VISIBLE | PBS_MARQUEE, 
@@ -2063,11 +2056,22 @@ void CreateUI(HWND hWnd)
     // TAB 4: CUSTOMIZATION
     CreateLabel(4, hWnd, L"Özelleştirme", 40, 10, 300, 40, g_hFontTitle);
     
-    // Progress Bar Behavior Section
-    CreateLabel(4, hWnd, L"İlerleme Çubuğu Davranışı", 40, 70, 300, 25, g_hFontSubtitle);
-    CreateLabel(4, hWnd, L"Boşta kalma durumu:", 40, 100, 150, 20, g_hFontNormal);
+    // Theme Selection Section
+    CreateLabel(4, hWnd, L"Tema Seçimi", 40, 70, 300, 25, g_hFontSubtitle);
+    CreateLabel(4, hWnd, L"Aydınlık/Karanlık Tema:", 40, 100, 200, 20, g_hFontNormal);
     
-    g_hComboProgressMode = CreateCtrl(4, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 40, 125, 250, 200, hWnd, (HMENU)IDC_COMBO_PROGRESS_MODE);
+    g_hThemeToggleBtn = CreateCtrl(4, L"BUTTON", g_isDarkMode ? L"☀️ Aydınlık Moda Geç" : L"🌙 Karanlık Moda Geç", 
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 40, 125, 200, 35, hWnd, (HMENU)IDB_TOGGLE_THEME);
+    SendMessage(g_hThemeToggleBtn, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    SetModernStyle(g_hThemeToggleBtn);
+    
+    CreateLabel(4, hWnd, L"Not: Tema tercihiniz otomatik olarak kaydedilir.", 40, 170, 400, 20, g_hFontSmall);
+    
+    // Progress Bar Behavior Section
+    CreateLabel(4, hWnd, L"İlerleme Çubuğu Davranışı", 40, 210, 300, 25, g_hFontSubtitle);
+    CreateLabel(4, hWnd, L"Boşta kalma durumu:", 40, 240, 150, 20, g_hFontNormal);
+    
+    g_hComboProgressMode = CreateCtrl(4, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 40, 265, 250, 200, hWnd, (HMENU)IDC_COMBO_PROGRESS_MODE);
     SendMessage(g_hComboProgressMode, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
     SendMessage(g_hComboProgressMode, CB_ADDSTRING, 0, (LPARAM)L"Marquee (Animasyonlu)");
     SendMessage(g_hComboProgressMode, CB_ADDSTRING, 0, (LPARAM)L"Full (100%)");
@@ -2075,18 +2079,18 @@ void CreateUI(HWND hWnd)
     SendMessage(g_hComboProgressMode, CB_ADDSTRING, 0, (LPARAM)L"Custom (Özel Yüzde)");
     SendMessage(g_hComboProgressMode, CB_SETCURSEL, g_progressBarMode, 0);
     
-    CreateLabel(4, hWnd, L"Özel yüzde değeri:", 40, 160, 150, 20, g_hFontNormal);
-    g_hEditProgressCustom = CreateCtrl(4, L"EDIT", std::to_wstring(g_customProgressValue).c_str(), WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER, 200, 157, 90, 25, hWnd, (HMENU)IDC_EDIT_PROGRESS_CUSTOM);
+    CreateLabel(4, hWnd, L"Özel yüzde değeri:", 40, 300, 150, 20, g_hFontNormal);
+    g_hEditProgressCustom = CreateCtrl(4, L"EDIT", std::to_wstring(g_customProgressValue).c_str(), WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER, 200, 297, 90, 25, hWnd, (HMENU)IDC_EDIT_PROGRESS_CUSTOM);
     SendMessage(g_hEditProgressCustom, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
     EnableWindow(g_hEditProgressCustom, g_progressBarMode == 3);
     
-    CreateLabel(4, hWnd, L"(Sadece Custom seçiliyken aktif)", 40, 190, 250, 20, g_hFontSmall);
+    CreateLabel(4, hWnd, L"(Sadece Custom seçiliyken aktif)", 40, 330, 250, 20, g_hFontSmall);
     
     // Tray Icon Selection Section
-    CreateLabel(4, hWnd, L"Tepsi İkonu Seçimi", 40, 230, 300, 25, g_hFontSubtitle);
-    CreateLabel(4, hWnd, L"Aktif ikon:", 40, 260, 150, 20, g_hFontNormal);
+    CreateLabel(4, hWnd, L"Tepsi İkonu Seçimi", 40, 370, 300, 25, g_hFontSubtitle);
+    CreateLabel(4, hWnd, L"Aktif ikon:", 40, 400, 150, 20, g_hFontNormal);
     
-    g_hComboTrayIcon = CreateCtrl(4, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 40, 285, 250, 200, hWnd, (HMENU)IDC_COMBO_TRAY_ICON);
+    g_hComboTrayIcon = CreateCtrl(4, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 40, 425, 250, 200, hWnd, (HMENU)IDC_COMBO_TRAY_ICON);
     SendMessage(g_hComboTrayIcon, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
     SendMessage(g_hComboTrayIcon, CB_ADDSTRING, 0, (LPARAM)L"Varsayılan");
     SendMessage(g_hComboTrayIcon, CB_ADDSTRING, 0, (LPARAM)L"WinRAR Bulunamadı (❌)");
@@ -2094,10 +2098,10 @@ void CreateUI(HWND hWnd)
     SendMessage(g_hComboTrayIcon, CB_ADDSTRING, 0, (LPARAM)L"Bağlantılı (✅)");
     SendMessage(g_hComboTrayIcon, CB_SETCURSEL, g_selectedTrayIcon, 0);
     
-    HWND hBtnApplyTrayIcon = CreateCtrl(4, L"BUTTON", L"🎨 Uygula", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 300, 285, 100, 30, hWnd, (HMENU)IDB_APPLY_TRAY_ICON);
+    HWND hBtnApplyTrayIcon = CreateCtrl(4, L"BUTTON", L"🎨 Uygula", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 300, 425, 100, 30, hWnd, (HMENU)IDB_APPLY_TRAY_ICON);
     SetModernStyle(hBtnApplyTrayIcon);
     
-    CreateLabel(4, hWnd, L"Not: Tray ikonları otomatik olarak sistem durumuna göre değişir.\nBu ayar manuel seçim yapmak içindir.", 40, 330, 600, 40, g_hFontSmall);
+    CreateLabel(4, hWnd, L"Not: Tray ikonları otomatik olarak sistem durumuna göre değişir.\nBu ayar manuel seçim yapmak içindir.", 40, 470, 600, 40, g_hFontSmall);
 }
 
 
@@ -3261,7 +3265,7 @@ void ApplyTheme() {
     
     // Update theme toggle button text
     if (g_hThemeToggleBtn) {
-        SetWindowTextW(g_hThemeToggleBtn, g_isDarkMode ? L"☀️ Light Mode" : L"🌙 Dark Mode");
+        SetWindowTextW(g_hThemeToggleBtn, g_isDarkMode ? L"☀️ Aydınlık Moda Geç" : L"🌙 Karanlık Moda Geç");
     }
     
     // Force complete window redraw
